@@ -150,12 +150,7 @@ function LoginForm() {
               <label className="text-sm font-bold text-slate-700">
                 Password
               </label>
-              <button
-                type="button"
-                className="text-xs font-bold text-blue-600 hover:text-blue-700"
-              >
-                Forgot?
-              </button>
+              <a href="/forgot-password" className="text-xs font-bold text-blue-600 hover:text-blue-700">Forgot?</a>
             </div>
             <div className="relative group">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors w-5 h-5" />
