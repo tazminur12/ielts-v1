@@ -10,10 +10,10 @@ import {
   X,
   GraduationCap,
   BarChart,
-  Package,
   CreditCard,
   ClipboardList,
   Image,
+  DollarSign,
 } from "lucide-react";
 import { useState } from "react";
 import { useSession } from "next-auth/react";
@@ -39,13 +39,13 @@ export default function Sidebar() {
 
   const staffAdminLinks = [
     { name: "Assignments", href: "/dashboard/assignments", icon: ClipboardList },
-    { name: "Products", href: "/dashboard/products", icon: Package },
     { name: "Orders", href: "/dashboard/orders", icon: CreditCard },
     { name: "Analytics", href: "/dashboard/analytics", icon: BarChart },
   ];
 
   const adminLinks = [
     { name: "Manage Users", href: "/dashboard/admin/users", icon: Users },
+    { name: "Pricing Plans", href: "/dashboard/admin/plans", icon: DollarSign },
     { name: "Banner Management", href: "/dashboard/admin/banners", icon: Image },
   ];
 

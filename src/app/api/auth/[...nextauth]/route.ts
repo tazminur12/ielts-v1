@@ -1,39 +1,44 @@
-import NextAuth, { NextAuthOptions } from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
-import connectDB from "@/lib/mongodb";
-import User from "@/models/User";
+import NextAuth, { NextAuthOptions } from 'next-auth';
+import CredentialsProvider from 'next-auth/providers/credentials';
+import GoogleProvider from 'next-auth/providers/google';
+import bcrypt from 'bcryptjs';
+import connectDB from '@/lib/mongodb';
+import User from '@/models/User';
 
 export const authOptions: NextAuthOptions = {
   providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID as string,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+    }),
     CredentialsProvider({
-      name: "Credentials",
+      name: 'Credentials',
       credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
+        email: { label: 'Email', type: 'email' },
+        password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error("Invalid credentials");
+          throw new Error('Invalid credentials');
         }
 
         await connectDB();
 
         const user = await User.findOne({ email: credentials.email }).select(
-          "+password"
+          '+password',
         );
 
         if (!user) {
-          throw new Error("Invalid credentials");
+          throw new Error('Invalid credentials');
         }
 
         const isMatch = await bcrypt.compare(
           credentials.password,
-          user.password!
+          user.password!,
         );
 
         if (!isMatch) {
-          throw new Error("Invalid credentials");
+          throw new Error('Invalid credentials');
         }
 
         return {
@@ -46,27 +51,67 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async signIn({ user, account }) {
+      if (account?.provider === 'google') {
+        await connectDB();
+        try {
+          const userExists = await User.findOne({ email: user.email });
+          if (!userExists) {
+            
+            await User.create({
+              name: user.name ?? 'New User',
+              email: user.email as string,
+              role: 'user',
+            });
+          }
+          return true;
+        } catch (error) {
+          console.log('Error checking user:', error);
+          return false;
+        }
+      }
+      return true;
+    },
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.role = user.role;
         token.id = user.id;
+      }
+      // Refresh token data on update trigger
+      if (trigger === 'update' || !token.role) {
+        await connectDB();
+        const dbUser = await User.findOne({ email: token.email });
+        if (dbUser) {
+          token.role = dbUser.role;
+          token.id = dbUser._id.toString();
+          token.phone = dbUser.phone;
+          token.location = dbUser.location;
+          token.bio = dbUser.bio;
+          token.targetScore = dbUser.targetScore;
+          token.nextExamDate = dbUser.nextExamDate;
+        }
       }
       return token;
     },
     async session({ session, token }) {
       if (session?.user) {
-        session.user.role = token.role;
+        session.user.role = token.role as string;
         session.user.id = token.id as string;
+        (session.user as any).phone = token.phone;
+        (session.user as any).location = token.location;
+        (session.user as any).bio = token.bio;
+        (session.user as any).targetScore = token.targetScore;
+        (session.user as any).nextExamDate = token.nextExamDate;
       }
       return session;
     },
   },
   session: {
-    strategy: "jwt",
+    strategy: 'jwt',
   },
   secret: process.env.NEXTAUTH_SECRET,
   pages: {
-    signIn: "/login",
+    signIn: '/login',
   },
 };
 

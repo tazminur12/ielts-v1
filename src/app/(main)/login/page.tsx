@@ -1,45 +1,53 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { signIn } from "next-auth/react";
-import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense } from 'react';
+import Link from 'next/link';
+import { signIn } from 'next-auth/react';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Swal from 'sweetalert2';
+import { motion } from 'framer-motion';
+import {
+  Mail,
+  Lock,
+  ArrowRight,
+  CheckCircle2,
+  ShieldCheck,
+  Zap,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const registered = searchParams.get("registered");
-  
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
+  const registered = searchParams.get('registered');
+
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (registered) {
       Swal.fire({
-        title: 'Success!',
-        text: 'Account created successfully. Please log in.',
+        title: 'Registration Successful!',
+        text: 'Please sign in with your credentials.',
         icon: 'success',
-        confirmButtonColor: '#3b82f6',
+        confirmButtonColor: '#2563eb',
+        customClass: { popup: 'rounded-[2rem]' },
       });
     }
   }, [registered]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
     try {
-      const res = await signIn("credentials", {
+      const res = await signIn('credentials', {
         redirect: false,
         email: formData.email,
         password: formData.password,
@@ -47,216 +55,238 @@ function LoginForm() {
 
       if (res?.error) {
         Swal.fire({
-          title: 'Error!',
-          text: 'Invalid email or password',
+          title: 'Access Denied',
+          text: 'Invalid credentials. Please check your email or password.',
           icon: 'error',
-          confirmButtonColor: '#3b82f6',
+          confirmButtonColor: '#ef4444',
+          customClass: { popup: 'rounded-[2rem]' },
         });
         setLoading(false);
       } else {
-        await Swal.fire({
-          title: 'Welcome Back!',
-          text: 'Successfully logged in',
-          icon: 'success',
-          timer: 1500,
-          showConfirmButton: false,
-        });
-        router.push("/"); 
+        router.push('/');
         router.refresh();
       }
     } catch (err) {
-      Swal.fire({
-        title: 'Error!',
-        text: 'An unexpected error occurred',
-        icon: 'error',
-        confirmButtonColor: '#3b82f6',
-      });
       setLoading(false);
     }
   };
 
   return (
-    <div className="w-full max-w-md space-y-8">
-      <div className="text-center lg:text-left">
-        <h2 className="text-3xl font-extrabold text-gray-900 dark:text-white">
-          Welcome back
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6 }}
+      className="w-full max-w-md bg-white border border-slate-200/60 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] rounded-[2.5rem] p-8 sm:p-10 relative overflow-hidden"
+    >
+      <div className="mb-8 relative">
+        <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+          Welcome Back
         </h2>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Please sign in to continue your preparation
+        <p className="mt-2 text-slate-500 font-medium">
+          Sign in to access your dashboard.
         </p>
       </div>
 
-      <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-        <input type="hidden" name="remember" defaultValue="true" />
+    
+      <button
+        type="button"
+        onClick={() => signIn('google', { callbackUrl: '/' })}
+        className="w-full flex items-center justify-center gap-3 py-3.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-xl font-bold text-slate-700 transition-all duration-200 mb-6 shadow-sm group"
+      >
+        <svg className="w-5 h-5" viewBox="0 0 24 24">
+          <path
+            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+            fill="#4285F4"
+          />
+          <path
+            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+            fill="#34A853"
+          />
+          <path
+            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+            fill="#FBBC05"
+          />
+          <path
+            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+            fill="#EA4335"
+          />
+        </svg>
+        <span className="text-sm">Continue with Google</span>
+      </button>
+
+      <div className="relative mb-6">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-slate-100"></span>
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-white px-4 text-slate-400 font-bold tracking-widest">
+            or use email
+          </span>
+        </div>
+      </div>
+
+      <form className="space-y-5" onSubmit={handleSubmit}>
         <div className="space-y-4">
-          <div>
-            <label
-              htmlFor="email-address"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-            >
-              Email address
+          <div className="space-y-1.5">
+            <label className="text-sm font-bold text-slate-700 ml-1">
+              Email Address
             </label>
-            <input
-              id="email-address"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              value={formData.email}
-              onChange={handleChange}
-              className="appearance-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 placeholder-gray-500 text-gray-900 dark:text-white rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm bg-white dark:bg-gray-700"
-              placeholder="Enter your email"
-            />
+            <div className="relative group">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors w-5 h-5" />
+              <input
+                name="email"
+                type="email"
+                required
+                value={formData.email}
+                onChange={handleChange}
+                className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 outline-none transition-all text-slate-900 font-medium"
+                placeholder="email@example.com"
+              />
+            </div>
           </div>
-          <div>
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
-            >
-              Password
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={formData.password}
-              onChange={handleChange}
-              className="appearance-none relative block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 placeholder-gray-500 text-gray-900 dark:text-white rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm bg-white dark:bg-gray-700"
-              placeholder="Enter your password"
-            />
+
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-center px-1">
+              <label className="text-sm font-bold text-slate-700">
+                Password
+              </label>
+              <a href="/forgot-password" className="text-xs font-bold text-blue-600 hover:text-blue-700">Forgot?</a>
+            </div>
+            <div className="relative group">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors w-5 h-5" />
+              <input
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={formData.password}
+                onChange={handleChange}
+                className="w-full pl-12 pr-12 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 outline-none transition-all text-slate-900 font-medium"
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors"
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <input
-              id="remember-me"
-              name="remember-me"
-              type="checkbox"
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            />
-            <label
-              htmlFor="remember-me"
-              className="ml-2 block text-sm text-gray-900 dark:text-gray-300"
-            >
-              Remember me
-            </label>
-          </div>
-
-          <div className="text-sm">
-            <a
-              href="#"
-              className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
-            >
-              Forgot password?
-            </a>
-          </div>
-        </div>
-
-        <div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {loading ? "Signing in..." : "Sign in"}
-          </button>
-        </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-200 transition-all active:scale-[0.98] disabled:opacity-70 mt-4 group"
+        >
+          {loading ? 'Authenticating...' : 'Sign in to Dashboard'}
+          {!loading && (
+            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+          )}
+        </button>
       </form>
 
-      <div className="mt-6 text-center text-sm">
-        <span className="text-gray-600 dark:text-gray-400">
-          Don't have an account?{" "}
-        </span>
+      <p className="mt-8 text-center text-slate-500 font-semibold text-sm">
+        Don&apos;t have an account?{' '}
         <Link
           href="/signup"
-          className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
+          className="text-blue-600 hover:text-blue-700 font-bold decoration-2 underline-offset-4 hover:underline"
         >
-          Sign up
+          Create Account
         </Link>
-      </div>
-    </div>
+      </p>
+    </motion.div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen pt-16 lg:pt-20 bg-gray-50 dark:bg-gray-900 flex">
-      {/* Left Side - IELTS Content */}
-      <div className="hidden lg:flex lg:w-1/2 bg-blue-600 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-600 to-blue-800 opacity-90"></div>
-        <div className="relative z-10 w-full flex flex-col justify-center px-12 text-white">
-          <h1 className="text-4xl font-bold mb-6">Master Your IELTS Exam</h1>
-          <p className="text-xl text-blue-100 mb-8">
-            Join thousands of students achieving their dream scores with our
-            comprehensive practice platform.
-          </p>
-          <div className="space-y-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-full bg-blue-500/30 flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 text-blue-100"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+    <div className="min-h-screen bg-[#F8FAFC] relative overflow-hidden flex flex-col">
+      {/* Background Gradients */}
+      <div className="absolute top-0 right-0 w-[50%] h-[50%] bg-blue-100/40 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/3" />
+      <div className="absolute bottom-0 left-0 w-[40%] h-[40%] bg-indigo-100/40 blur-[100px] rounded-full translate-y-1/3 -translate-x-1/4" />
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full mt-22 pb-16">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+          {/* Left Column */}
+          <div className="hidden lg:flex flex-col items-start">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-blue-100 shadow-sm mb-8"
+            >
+              <span className="flex h-2 w-2 rounded-full bg-blue-600 animate-pulse"></span>
+              <span className="text-sm font-semibold text-slate-600 tracking-wide uppercase">
+                Student Portal
+              </span>
+            </motion.div>
+
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="text-5xl lg:text-6xl font-bold text-slate-900 leading-[1.1] mb-6 tracking-tight"
+            >
+              Unlock Your <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">
+                Academic Potential
+              </span>
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="text-lg text-slate-600 mb-10 max-w-md font-medium leading-relaxed"
+            >
+              Log in to access your personalized IELTS study plan, track
+              progress, and take AI-evaluated mock tests.
+            </motion.p>
+
+            <div className="grid gap-4 w-full max-w-sm">
+              {[
+                {
+                  icon: <Zap className="text-orange-500" size={20} />,
+                  text: 'Instant Writing Analysis',
+                },
+                {
+                  icon: <ShieldCheck className="text-blue-500" size={20} />,
+                  text: 'Secure Exam Environment',
+                },
+                {
+                  icon: <CheckCircle2 className="text-green-500" size={20} />,
+                  text: 'Detailed Band Reports',
+                },
+              ].map((item, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 + i * 0.1 }}
+                  className="flex items-center gap-4 bg-white/60 backdrop-blur-md p-4 rounded-[1.5rem] border border-white shadow-sm"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              </div>
-              <span className="text-lg">Full-length Mock Tests</span>
-            </div>
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-full bg-blue-500/30 flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 text-blue-100"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
-                  />
-                </svg>
-              </div>
-              <span className="text-lg">Detailed Performance Analytics</span>
-            </div>
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-full bg-blue-500/30 flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 text-blue-100"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                  />
-                </svg>
-              </div>
-              <span className="text-lg">Expert Study Materials</span>
+                  <div className="p-2.5 bg-white rounded-xl shadow-sm border border-slate-50">
+                    {item.icon}
+                  </div>
+                  <span className="font-bold text-slate-700 text-sm">
+                    {item.text}
+                  </span>
+                </motion.div>
+              ))}
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Right Side - Login Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12 lg:p-16">
-        <Suspense fallback={<div>Loading...</div>}>
-          <LoginForm />
-        </Suspense>
+          {/* Right Column: Login Form */}
+          <div className="flex items-center justify-center lg:justify-end">
+            <Suspense
+              fallback={
+                <div className="animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full" />
+              }
+            >
+              <LoginForm />
+            </Suspense>
+          </div>
+        </div>
       </div>
     </div>
   );

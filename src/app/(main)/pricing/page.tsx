@@ -1,16 +1,157 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Check, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { useSession } from "next-auth/react";
+
+interface PlanFeatures {
+  mockTests: number | "unlimited";
+  speakingEvaluations: number | "unlimited";
+  writingCorrections: number | "unlimited";
+  hasAnalytics: boolean;
+  hasPersonalizedPlan: boolean;
+  hasPrioritySupport: boolean;
+  has1on1Coaching: boolean;
+  customFeatures?: string[];
+}
+
+interface Plan {
+  _id: string;
+  name: string;
+  slug: string;
+  description: string;
+  price: {
+    monthly: number;
+    yearly: number;
+  };
+  features: PlanFeatures;
+  isPremium: boolean;
+  trialDays: number;
+  displayOrder: number;
+}
 
 export default function PricingPage() {
+  const { data: session } = useSession();
   const [isAnnual, setIsAnnual] = useState(true);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [activeSubscription, setActiveSubscription] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchPlans();
+  }, []);
+
+  useEffect(() => {
+    // If user is logged in, fetch their active subscription to mark owned plan
+    const fetchSubscription = async () => {
+      try {
+        const res = await fetch('/api/subscriptions');
+        const data = await res.json();
+        if (data.success && data.data) {
+          setActiveSubscription(data.data);
+        } else {
+          setActiveSubscription(null);
+        }
+      } catch (err) {
+        console.error('Error fetching subscription:', err);
+        setActiveSubscription(null);
+      }
+    };
+
+    if (session && session.user) {
+      fetchSubscription();
+    } else {
+      setActiveSubscription(null);
+    }
+  }, [session]);
+
+  const fetchPlans = async () => {
+    try {
+      const response = await fetch("/api/plans");
+      const data = await response.json();
+      if (data.success) {
+        setPlans(data.data);
+      }
+    } catch (error) {
+      console.error("Error fetching plans:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const toggleFaq = (index: number) => {
     setOpenFaq(openFaq === index ? null : index);
   };
+
+  const formatFeature = (value: number | "unlimited" | boolean) => {
+    if (value === "unlimited") return "Unlimited";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    return value.toString();
+  };
+
+  const getPlanFeatures = (plan: Plan) => {
+    const features: string[] = [];
+
+    if (plan.features.mockTests === "unlimited") {
+      features.push("Unlimited Mock Tests");
+    } else if (plan.features.mockTests > 0) {
+      features.push(`${plan.features.mockTests} Mock Test${plan.features.mockTests > 1 ? 's' : ''}`);
+    }
+
+    if (plan.features.speakingEvaluations === "unlimited") {
+      features.push("Unlimited Speaking Evaluations");
+    } else if (plan.features.speakingEvaluations > 0) {
+      features.push(`${plan.features.speakingEvaluations} Speaking Evaluation${plan.features.speakingEvaluations > 1 ? 's' : ''}/mo`);
+    }
+
+    if (plan.features.writingCorrections === "unlimited") {
+      features.push("Unlimited Writing Corrections");
+    } else if (plan.features.writingCorrections > 0) {
+      features.push(`${plan.features.writingCorrections} Writing Correction${plan.features.writingCorrections > 1 ? 's' : ''}/mo`);
+    }
+
+    if (plan.features.hasAnalytics) {
+      features.push("Advanced Analytics Dashboard");
+    }
+
+    if (plan.features.hasPersonalizedPlan) {
+      features.push("Personalized Study Plan");
+    }
+
+    if (plan.features.hasPrioritySupport) {
+      features.push("Priority Support");
+    }
+
+    if (plan.features.has1on1Coaching) {
+      features.push("1-on-1 Expert Coaching");
+    }
+
+    if (plan.features.customFeatures) {
+      features.push(...plan.features.customFeatures);
+    }
+
+    return features;
+  };
+
+  const handleSubscribe = async (planSlug: string) => {
+    if (!session) {
+      window.location.href = `/signup?plan=${planSlug}`;
+      return;
+    }
+
+    // Redirect to checkout or payment page
+    window.location.href = `/checkout?plan=${planSlug}&billing=${isAnnual ? 'yearly' : 'monthly'}`;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
@@ -50,159 +191,161 @@ export default function PricingPage() {
 
       {/* Pricing Cards */}
       <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-        <div className="grid md:grid-cols-3 gap-8">
-          
-          {/* Free Tier */}
-          <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col">
-            <div className="mb-6">
-              <h3 className="text-xl font-bold text-slate-900">Starter</h3>
-              <p className="text-slate-500 text-sm mt-2">Essential tools to get started.</p>
-            </div>
-            <div className="mb-8">
-              <span className="text-4xl font-extrabold text-slate-900">$0</span>
-              <span className="text-slate-500">/mo</span>
-            </div>
-            <ul className="space-y-4 mb-8 flex-1">
-              {[
-                "2 Full Mock Tests",
-                "Basic Score Analysis",
-                "Community Access",
-                "Limited Practice Questions"
-              ].map((feature, i) => (
-                <li key={i} className="flex items-start text-sm text-slate-600">
-                  <Check className="w-5 h-5 text-green-500 mr-3 flex-shrink-0" />
-                  {feature}
-                </li>
-              ))}
-              {[
-                "AI Speaking Evaluation",
-                "Writing Correction",
-                "Priority Support"
-              ].map((feature, i) => (
-                <li key={i} className="flex items-start text-sm text-slate-400">
-                  <X className="w-5 h-5 text-slate-300 mr-3 flex-shrink-0" />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <Link
-              href="/signup"
-              className="block w-full py-3 px-6 text-center font-bold text-blue-600 border border-blue-200 bg-blue-50 rounded-xl hover:bg-blue-100 transition-colors"
-            >
-              Get Started Free
-            </Link>
-          </div>
+        <div className={`grid gap-8 ${plans.length === 3 ? 'md:grid-cols-3' : plans.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-1 max-w-md mx-auto'}`}>
+          {plans.map((plan) => {
+            const features = getPlanFeatures(plan);
+            const price = isAnnual ? plan.price.yearly : plan.price.monthly;
+            const isPopular = plan.isPremium;
+            const isUserPlan = Boolean(
+              activeSubscription &&
+                (activeSubscription.planId?._id === plan._id || activeSubscription.planId?.slug === plan.slug)
+            );
 
-          {/* Pro Tier (Popular) */}
-          <div className="relative bg-white rounded-3xl p-8 border-2 border-blue-600 shadow-xl flex flex-col transform md:-translate-y-4">
-            <div className="absolute top-0 right-0 left-0 bg-blue-600 text-white text-xs font-bold uppercase tracking-widest text-center py-2 rounded-t-2xl">
-              Most Popular
-            </div>
-            <div className="mb-6 mt-4">
-              <h3 className="text-xl font-bold text-slate-900">Pro Achiever</h3>
-              <p className="text-slate-500 text-sm mt-2">Everything you need to succeed.</p>
-            </div>
-            <div className="mb-8">
-              <span className="text-4xl font-extrabold text-slate-900">
-                ${isAnnual ? '19' : '29'}
-              </span>
-              <span className="text-slate-500">/mo</span>
-              {isAnnual && <p className="text-xs text-green-600 font-semibold mt-1">Billed ${19 * 12} yearly</p>}
-            </div>
-            <ul className="space-y-4 mb-8 flex-1">
-              {[
-                "Unlimited Mock Tests",
-                "Detailed AI Analytics",
-                "10 Speaking Evaluations/mo",
-                "10 Writing Corrections/mo",
-                "Advanced Vocabulary Builder",
-                "Priority Email Support"
-              ].map((feature, i) => (
-                <li key={i} className="flex items-start text-sm text-slate-700 font-medium">
-                  <Check className="w-5 h-5 text-blue-600 mr-3 flex-shrink-0" />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <Link
-              href="/signup?plan=pro"
-              className="block w-full py-4 px-6 text-center font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 hover:shadow-lg transition-all"
-            >
-              Start 7-Day Free Trial
-            </Link>
-          </div>
+            return (
+              <div
+                key={plan._id}
+                className={`relative bg-white rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all flex flex-col ${
+                  isPopular
+                    ? 'border-2 border-blue-600 shadow-blue-100 scale-105'
+                    : 'border border-slate-200'
+                }`}
+              >
+                {isPopular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-xs font-bold uppercase tracking-wide px-4 py-1 rounded-full">
+                    Most Popular
+                  </div>
+                )}
 
-          {/* Ultimate Tier */}
-          <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col">
-            <div className="mb-6">
-              <h3 className="text-xl font-bold text-slate-900">Ultimate</h3>
-              <p className="text-slate-500 text-sm mt-2">For dedicated high achievers.</p>
-            </div>
-            <div className="mb-8">
-              <span className="text-4xl font-extrabold text-slate-900">
-                ${isAnnual ? '49' : '59'}
-              </span>
-              <span className="text-slate-500">/mo</span>
-            </div>
-            <ul className="space-y-4 mb-8 flex-1">
-              {[
-                "Everything in Pro",
-                "Unlimited AI Feedback",
-                "1-on-1 Expert Session (1/mo)",
-                "Personalized Study Plan",
-                "Weakness Detection System",
-                "24/7 Priority Support"
-              ].map((feature, i) => (
-                <li key={i} className="flex items-start text-sm text-slate-600">
-                  <Check className="w-5 h-5 text-green-500 mr-3 flex-shrink-0" />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <Link
-              href="/signup?plan=ultimate"
-              className="block w-full py-3 px-6 text-center font-bold text-slate-700 border border-slate-300 bg-white rounded-xl hover:bg-slate-50 transition-colors"
-            >
-              Choose Ultimate
-            </Link>
-          </div>
+                <div className="mb-5">
+                  <h3 className="text-lg font-bold text-slate-900">{plan.name}</h3>
+                  <p className="text-slate-500 text-xs mt-1 line-clamp-2">{plan.description}</p>
+                  {isUserPlan && (
+                    <div className="inline-block mt-3 text-xs font-semibold text-green-800 bg-green-100 px-3 py-1 rounded-full">
+                      Current plan
+                    </div>
+                  )}
+                </div>
 
+                <div className="mb-5">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl font-extrabold text-slate-900">
+                      ${price}
+                    </span>
+                    <span className="text-slate-500 text-sm">/mo</span>
+                  </div>
+                  {isAnnual && price > 0 && (
+                    <p className="text-xs text-green-600 font-medium mt-1">
+                      Save ${(plan.price.monthly - price) * 12}/year
+                    </p>
+                  )}
+                </div>
+
+                <ul className="space-y-2.5 mb-6 flex-1">
+                  {features.slice(0, 6).map((feature, i) => (
+                    <li key={i} className="flex items-start text-xs text-slate-700">
+                      <Check className={`w-4 h-4 mr-2 shrink-0 mt-0.5 ${isPopular ? 'text-blue-600' : 'text-green-500'}`} />
+                      <span className="leading-tight">{feature}</span>
+                    </li>
+                  ))}
+                  {features.length > 6 && (
+                    <li className="text-xs text-slate-500 italic pl-6">
+                      +{features.length - 6} more features
+                    </li>
+                  )}
+                </ul>
+
+                {isUserPlan ? (
+                  <div>
+                    <button
+                      disabled
+                      className="block w-full py-3 px-4 text-center text-sm font-bold rounded-lg bg-green-600 text-white cursor-default"
+                    >
+                      Current Plan
+                    </button>
+                    <p className="text-xs text-green-600 mt-2">You are subscribed to this plan.</p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleSubscribe(plan.slug)}
+                    className={`block w-full py-3 px-4 text-center text-sm font-bold rounded-lg transition-all ${
+                      isPopular
+                        ? 'text-white bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg'
+                        : plan.price.monthly === 0
+                        ? 'text-blue-600 border-2 border-blue-200 bg-blue-50 hover:bg-blue-100'
+                        : 'text-slate-700 border-2 border-slate-300 bg-white hover:border-slate-400'
+                    }`}
+                  >
+                    {plan.price.monthly === 0
+                      ? 'Try Free'
+                      : plan.trialDays > 0
+                      ? `Start ${plan.trialDays}-Day Trial`
+                      : `Get Started`}
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </section>
 
-      {/* Comparison Table (Desktop Only) */}
-      <section className="hidden lg:block py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-        <h2 className="text-2xl md:text-3xl font-bold text-center text-slate-900 mb-12">Compare Features</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr>
-                <th className="p-4 border-b-2 border-slate-200 text-lg font-semibold text-slate-900 w-1/3">Feature</th>
-                <th className="p-4 border-b-2 border-slate-200 text-lg font-semibold text-slate-900 text-center w-1/5">Starter</th>
-                <th className="p-4 border-b-2 border-blue-600 text-lg font-bold text-blue-600 text-center w-1/5 bg-blue-50/50 rounded-t-xl">Pro</th>
-                <th className="p-4 border-b-2 border-slate-200 text-lg font-semibold text-slate-900 text-center w-1/5">Ultimate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { name: "Mock Tests", starter: "2", pro: "Unlimited", ultimate: "Unlimited" },
-                { name: "Speaking AI Feedback", starter: "No", pro: "10/mo", ultimate: "Unlimited" },
-                { name: "Writing AI Correction", starter: "No", pro: "10/mo", ultimate: "Unlimited" },
-                { name: "Analytics Dashboard", starter: "Basic", pro: "Advanced", ultimate: "Advanced + Weakness Detection" },
-                { name: "Study Plan", starter: "-", pro: "Standard", ultimate: "Personalized" },
-                { name: "Support", starter: "Community", pro: "Email", ultimate: "24/7 Priority + 1-on-1" },
-              ].map((row, i) => (
-                <tr key={i} className={i % 2 === 0 ? "bg-slate-50" : "bg-white"}>
-                  <td className="p-4 border-b border-slate-200 font-medium text-slate-700">{row.name}</td>
-                  <td className="p-4 border-b border-slate-200 text-center text-slate-600">{row.starter}</td>
-                  <td className="p-4 border-b border-slate-200 text-center font-bold text-blue-600 bg-blue-50/30">{row.pro}</td>
-                  <td className="p-4 border-b border-slate-200 text-center text-slate-600">{row.ultimate}</td>
+      {/* Comparison Table */}
+      {plans.length > 1 && (
+        <section className="hidden lg:block py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+          <h2 className="text-2xl md:text-3xl font-bold text-center text-slate-900 mb-12">
+            Compare Features
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr>
+                  <th className="p-4 border-b-2 border-slate-200 text-lg font-semibold text-slate-900">
+                    Feature
+                  </th>
+                  {plans.map((plan) => (
+                    <th
+                      key={plan._id}
+                      className={`p-4 border-b-2 text-lg font-semibold text-center ${
+                        plan.isPremium
+                          ? 'border-blue-600 text-blue-600 bg-blue-50/50'
+                          : 'border-slate-200 text-slate-900'
+                      }`}
+                    >
+                      {plan.name}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {[
+                  { label: "Mock Tests", key: "mockTests" },
+                  { label: "Speaking Evaluations", key: "speakingEvaluations" },
+                  { label: "Writing Corrections", key: "writingCorrections" },
+                  { label: "Analytics Dashboard", key: "hasAnalytics" },
+                  { label: "Personalized Study Plan", key: "hasPersonalizedPlan" },
+                  { label: "Priority Support", key: "hasPrioritySupport" },
+                  { label: "1-on-1 Coaching", key: "has1on1Coaching" },
+                ].map((row, i) => (
+                  <tr key={i} className={i % 2 === 0 ? "bg-slate-50" : "bg-white"}>
+                    <td className="p-4 border-b border-slate-200 font-medium text-slate-700">
+                      {row.label}
+                    </td>
+                    {plans.map((plan) => (
+                      <td
+                        key={plan._id}
+                        className={`p-4 border-b border-slate-200 text-center ${
+                          plan.isPremium ? 'font-bold text-blue-600 bg-blue-50/30' : 'text-slate-600'
+                        }`}
+                      >
+                        {formatFeature(plan.features[row.key as keyof PlanFeatures] as number | "unlimited" | boolean)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* FAQ Section */}
       <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-3xl mx-auto">
@@ -210,20 +353,20 @@ export default function PricingPage() {
         <div className="space-y-4">
           {[
             {
-              q: "Can I switch plans later?",
-              a: "Yes, you can upgrade or downgrade your plan at any time. Changes take effect immediately, with pro-rated charges or credits applied to your account."
+              q: "Can I change my plan after subscribing?",
+              a: "Yes. You may upgrade or downgrade at any time; changes are applied immediately. Any prorated charges or credits will be calculated based on your billing cycle and reflected on your next invoice."
             },
             {
-              q: "How does the 7-day free trial work?",
-              a: "You get full access to the Pro plan for 7 days. You won't be charged if you cancel before the trial ends. It's a risk-free way to try our premium features."
+              q: "What does the 7‑day free trial include?",
+              a: "The trial grants full access to the Pro plan for seven days. If you cancel before the trial ends, you will not be charged. After the trial period, billing begins according to the selected billing cycle."
             },
             {
-              q: "Is the AI feedback accurate?",
-              a: "Our AI is trained on thousands of real IELTS exams graded by certified examiners. It provides band scores that are typically within 0.5 points of actual test results."
+              q: "How accurate is the AI feedback?",
+              a: "Our AI models are trained on thousands of graded IELTS responses reviewed by certified examiners. They provide a reliable estimate of performance (typically within ±0.5 band), but should be used alongside human feedback for final evaluation."
             },
             {
-              q: "Do you offer team or institution pricing?",
-              a: "Yes! We offer special rates for schools, coaching centers, and large groups. Please contact our sales team for a custom quote."
+              q: "Do you offer institutional or volume pricing?",
+              a: "Yes. We provide custom pricing and deployment options for schools, coaching centres, and organisations. Please contact our sales team with your requirements and user count for a tailored proposal."
             }
           ].map((faq, index) => (
             <div key={index} className="border border-slate-200 rounded-xl overflow-hidden bg-white">
@@ -245,17 +388,25 @@ export default function PricingPage() {
       </section>
 
       {/* CTA Footer */}
-      <section className="py-20 px-4 text-center bg-slate-900 text-white">
-        <h2 className="text-2xl md:text-3xl font-bold mb-6">Ready to achieve your dream score?</h2>
-        <p className="text-base md:text-lg text-slate-300 mb-8 max-w-2xl mx-auto">
-          Join 50,000+ students who trust us for their IELTS preparation.
+      <section className="py-20 px-4 text-center bg-white text-slate-900">
+        <h2 className="text-2xl md:text-3xl font-bold mb-4">Ready to reach your target IELTS band?</h2>
+        <p className="text-base md:text-lg text-slate-600 mb-8 max-w-2xl mx-auto">
+          Start a focused, personalised study plan with AI-driven feedback and expert support. Trusted by over 50,000 students worldwide.
         </p>
-        <Link
-          href="/signup"
-          className="inline-block py-4 px-10 bg-blue-600 font-bold rounded-xl hover:bg-blue-500 hover:shadow-lg hover:-translate-y-1 transition-all"
-        >
-          Get Started Now
-        </Link>
+        <div className="flex items-center justify-center gap-4">
+          <Link
+            href="/signup"
+            className="inline-block py-3 px-8 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 hover:shadow transition-all"
+          >
+            Get Started
+          </Link>
+          <Link
+            href="/pricing#compare"
+            className="inline-block py-3 px-6 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-all"
+          >
+            Compare plans
+          </Link>
+        </div>
       </section>
     </div>
   );
