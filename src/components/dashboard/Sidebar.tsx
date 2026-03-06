@@ -38,7 +38,8 @@ export default function Sidebar() {
   ];
 
   const staffAdminLinks = [
-    { name: "Assignments", href: "/dashboard/assignments", icon: ClipboardList },
+    { name: "Mock Tests", href: "/dashboard/admin/mock-tests", icon: ClipboardList },
+    { name: "Practice Tests", href: "/dashboard/admin/practice-tests", icon: FileText },
     { name: "Orders", href: "/dashboard/orders", icon: CreditCard },
     { name: "Analytics", href: "/dashboard/analytics", icon: BarChart },
   ];

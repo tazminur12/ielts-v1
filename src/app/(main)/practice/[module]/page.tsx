@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
   Clock, BarChart, Lock, PlayCircle, Star,
   Filter, ChevronLeft, ChevronRight, BookOpen,
@@ -70,7 +71,10 @@ function CardSkeleton() {
   );
 }
 
-export default function MockTestsPage() {
+export default function PracticeModulePage() {
+  const params = useParams();
+  const moduleSlug = params?.module as string; 
+  
   const [tests, setTests] = useState<Test[]>([]);
   const [accessibleSlugs, setAccessibleSlugs] = useState<string[]>([]);
   const [filter, setFilter] = useState("All");
@@ -78,13 +82,20 @@ export default function MockTestsPage() {
   const [error, setError] = useState("");
   const [pagination, setPagination] = useState({ total: 0, pages: 1, page: 1 });
 
-  const fetchTests = async (page = 1, moduleFilter = "") => {
+  const fetchTests = async (page = 1, typeFilter = "") => {
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ examType: "mock", page: String(page), limit: "12" });
-      if (moduleFilter && moduleFilter !== "All") params.set("module", moduleFilter.toLowerCase().replace(" ", ""));
-      const res = await fetch(`/api/tests?${params}`);
+      const queryParams = new URLSearchParams({ 
+        examType: "practice", 
+        page: String(page), 
+        limit: "12",
+        module: moduleSlug
+      });
+      // the filter is for tags like Academic/General
+      if (typeFilter && typeFilter !== "All") queryParams.set("type", typeFilter);
+
+      const res = await fetch(`/api/tests?${queryParams}`);
       if (!res.ok) throw new Error("Failed to load tests");
       const data = await res.json();
       setTests(data.tests || []);
@@ -98,12 +109,16 @@ export default function MockTestsPage() {
   };
 
   useEffect(() => {
-    fetchTests(1, filter);
-  }, [filter]);
+    if (moduleSlug) {
+      fetchTests(1, filter);
+    }
+  }, [filter, moduleSlug]);
 
   const isUnlocked = (test: Test) => accessibleSlugs.includes(test.accessLevel);
 
-  const TYPE_FILTERS = ["All", "Academic", "General", "Speaking Only"];
+  const TYPE_FILTERS = ["All", "Academic", "General"];
+
+  const displayModuleName = MODULE_LABELS[moduleSlug?.toLowerCase()] || moduleSlug;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pt-20 pb-20">
@@ -112,12 +127,11 @@ export default function MockTestsPage() {
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           <div className="max-w-3xl">
-            <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-4">
-              IELTS Mock Tests Library
+            <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-4 capitalize">
+              {displayModuleName} Practice Tests
             </h1>
             <p className="text-lg text-slate-600 leading-relaxed">
-              Simulate the real exam experience with our curated collection of mock tests.
-              Get instant feedback, band scores, and detailed performance analytics.
+              Focus on {displayModuleName?.toLowerCase()} capabilities with targeted exercises and questions designed to improve your band score.
             </p>
           </div>
         </div>
@@ -237,10 +251,10 @@ export default function MockTestsPage() {
                       <div className="p-6 mt-auto">
                         {unlocked ? (
                           <Link
-                            href={`/exam?testId=${test._id}`}
+                            href={`/exam?testId=${test._id}&mode=practice`}
                             className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all"
                           >
-                            <PlayCircle size={18} /> Start Test
+                            <PlayCircle size={18} /> Start Practice
                           </Link>
                         ) : (
                           <Link
@@ -263,8 +277,8 @@ export default function MockTestsPage() {
             <div className="inline-flex p-4 bg-slate-100 rounded-full mb-4">
               <Filter size={32} className="text-slate-400" />
             </div>
-            <h3 className="text-lg font-bold text-slate-900">No tests found</h3>
-            <p className="text-slate-500">Try adjusting your filters.</p>
+            <h3 className="text-lg font-bold text-slate-900">No practice tests found</h3>
+            <p className="text-slate-500">Admin has not added any {displayModuleName} practice tests yet.</p>
           </div>
         )}
 

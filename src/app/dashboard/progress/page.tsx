@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   TrendingUp,
   Calendar,
@@ -8,12 +9,28 @@ import {
   MessageSquare,
   BookOpen,
   BarChart3,
-  Download,
   Filter,
+  ExternalLink,
 } from "lucide-react";
+// ─── Types ────────────────────────────────────────────────────────────────────
 
+interface SectionBand { module: string; band: number }
 
-// Mock data structure - replace with actual API call later
+interface Attempt {
+  _id: string;
+  module: string;
+  examType: string;
+  status: string;
+  bandScore?: number;
+  overallBand?: number;
+  rawScore?: number;
+  sectionBands?: SectionBand[];
+  startedAt: string;
+  submittedAt?: string;
+  testId?: { _id: string; title: string; module: string };
+}
+
+// Map attempt data to the shape the existing UI expects
 interface ExamResult {
   _id: string;
   examType: "listening" | "reading" | "writing" | "speaking" | "full-test";
@@ -31,104 +48,61 @@ interface ExamResult {
     commentedAt: string;
   }[];
   status: "completed" | "graded" | "pending";
+  attemptId: string;
+}
+
+function attemptToResult(a: Attempt): ExamResult {
+  const scores: ExamResult["scores"] = { overall: a.overallBand ?? a.bandScore ?? 0 };
+  if (a.sectionBands) {
+    a.sectionBands.forEach((sb) => {
+      (scores as Record<string, number>)[sb.module] = sb.band;
+    });
+  } else if (a.module && a.module !== "full") {
+    (scores as Record<string, number>)[a.module] = a.bandScore ?? 0;
+    scores.overall = a.bandScore ?? 0;
+  }
+
+  const examType = a.module === "full" ? "full-test"
+    : (a.module as ExamResult["examType"]) ?? "full-test";
+
+  const status: ExamResult["status"] =
+    a.status === "evaluated" ? "graded"
+    : a.status === "submitted" ? "completed"
+    : "pending";
+
+  return {
+    _id: a._id,
+    examType,
+    date: a.submittedAt ?? a.startedAt,
+    scores,
+    teacherComments: [],
+    status,
+    attemptId: a._id,
+  };
 }
 
 export default function ProgressPage() {
-  // const { data: session } = useSession();
   const [examResults, setExamResults] = useState<ExamResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("all");
 
-  // Mock data - replace with actual API call
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setExamResults([
-        {
-          _id: "1",
-          examType: "full-test",
-          date: "2026-02-10T10:00:00Z",
-          scores: {
-            listening: 7.5,
-            reading: 7.0,
-            writing: 6.5,
-            speaking: 7.0,
-            overall: 7.0,
-          },
-          teacherComments: [
-            {
-              teacher: "John Smith",
-              comment: "Excellent listening performance! Your reading skills are improving. Focus on writing task 2 structure and speaking fluency.",
-              commentedAt: "2026-02-11T14:00:00Z",
-            },
-          ],
-          status: "graded",
-        },
-        {
-          _id: "2",
-          examType: "writing",
-          date: "2026-02-05T10:00:00Z",
-          scores: {
-            writing: 6.0,
-            overall: 6.0,
-          },
-          teacherComments: [
-            {
-              teacher: "Sarah Johnson",
-              comment: "Good effort! Work on your essay structure and use more diverse vocabulary. Pay attention to grammar, especially with complex sentences.",
-              commentedAt: "2026-02-06T15:30:00Z",
-            },
-          ],
-          status: "graded",
-        },
-        {
-          _id: "3",
-          examType: "speaking",
-          date: "2026-02-01T14:00:00Z",
-          scores: {
-            speaking: 6.5,
-            overall: 6.5,
-          },
-          teacherComments: [
-            {
-              teacher: "Michael Brown",
-              comment: "Your pronunciation is clear. Try to speak more naturally and use a wider range of vocabulary. Practice responding to part 3 questions.",
-              commentedAt: "2026-02-02T10:00:00Z",
-            },
-          ],
-          status: "graded",
-        },
-        {
-          _id: "4",
-          examType: "listening",
-          date: "2026-01-28T09:00:00Z",
-          scores: {
-            listening: 7.0,
-            overall: 7.0,
-          },
-          teacherComments: [],
-          status: "completed",
-        },
-        {
-          _id: "5",
-          examType: "reading",
-          date: "2026-01-25T11:00:00Z",
-          scores: {
-            reading: 6.5,
-            overall: 6.5,
-          },
-          teacherComments: [
-            {
-              teacher: "Emily Davis",
-              comment: "Good progress! Focus on time management and practice skimming techniques for faster reading comprehension.",
-              commentedAt: "2026-01-26T09:00:00Z",
-            },
-          ],
-          status: "graded",
-        },
-      ]);
-      setLoading(false);
-    }, 1000);
+    (async () => {
+      try {
+        const res = await fetch("/api/attempts");
+        if (res.ok) {
+          const data = await res.json();
+          const attempts: Attempt[] = data.attempts ?? [];
+          setExamResults(
+            attempts
+              .filter((a) => a.status !== "in_progress")
+              .map(attemptToResult)
+          );
+        }
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   const getExamTypeColor = (type: string) => {
@@ -183,8 +157,7 @@ export default function ProgressPage() {
           </p>
         </div>
         <button className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm">
-          <Download className="w-4 h-4 mr-2" />
-          Export Results
+          View All Results
         </button>
       </div>
 
@@ -417,7 +390,7 @@ export default function ProgressPage() {
                 </div>
 
                 {/* Overall Score */}
-                <div className="flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6 min-w-[140px]">
+                <div className="flex flex-col items-center justify-center bg-linear-to-br from-blue-50 to-blue-100 rounded-xl p-6 min-w-35">
                   <Award className="w-8 h-8 text-blue-600 mb-2" />
                   <p className="text-xs text-gray-600 mb-1">Overall Band</p>
                   <p
@@ -483,6 +456,16 @@ export default function ProgressPage() {
                   </div>
                 </div>
               )}
+
+              {/* View Full Results link */}
+              <div className="mt-4 flex justify-end">
+                <Link
+                  href={`/exam/results?attemptId=${result.attemptId}`}
+                  className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline font-medium"
+                >
+                  <ExternalLink size={13} /> View Full Results
+                </Link>
+              </div>
             </div>
           ))}
         </div>

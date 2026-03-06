@@ -14,7 +14,7 @@ export default function ExamLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const isDashboard = pathname === '/exam' || pathname === '/exam/';
+  const isDashboard = pathname === '/exam' || pathname === '/exam/' || pathname.startsWith('/exam/take') || pathname.startsWith('/exam/results');
 
   return (
     <ExamProvider>
