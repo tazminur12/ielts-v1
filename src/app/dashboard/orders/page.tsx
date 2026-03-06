@@ -183,101 +183,101 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6 w-full overflow-x-hidden box-border">
+      <div className="mb-4 md:mb-6">
+        <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-2">
           Subscriptions & Orders
         </h1>
-        <p className="text-slate-600">
+        <p className="text-sm md:text-base text-slate-600">
           Manage all user subscriptions and payments
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 shadow-lg text-white">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+        <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 md:p-6 shadow-lg text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-green-100 text-sm mb-1">Total Revenue</p>
-              <p className="text-3xl font-bold">${stats.totalRevenue.toFixed(2)}</p>
-              <p className="text-green-100 text-xs mt-1">From active subscriptions</p>
+              <p className="text-green-100 text-xs md:text-sm mb-1">Total Revenue</p>
+              <p className="text-2xl md:text-3xl font-bold">${stats.totalRevenue.toFixed(2)}</p>
+              <p className="text-green-100 text-[10px] md:text-xs mt-1">From active subscriptions</p>
             </div>
-            <div className="w-14 h-14 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-              <DollarSign className="w-8 h-8 text-white" />
+            <div className="w-12 h-12 md:w-14 md:h-14 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm shrink-0">
+              <DollarSign className="w-6 h-6 md:w-8 md:h-8 text-white" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+        <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-slate-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-slate-600 mb-1">Total Subscriptions</p>
-              <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
+              <p className="text-xs md:text-sm text-slate-600 mb-1">Total Subscriptions</p>
+              <p className="text-xl md:text-2xl font-bold text-slate-900">{stats.total}</p>
             </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Package className="w-6 h-6 text-blue-600" />
+            <div className="w-10 h-10 md:w-12 md:h-12 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+              <Package className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+        <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-slate-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-slate-600 mb-1">Active</p>
-              <p className="text-2xl font-bold text-green-600">{stats.active}</p>
+              <p className="text-xs md:text-sm text-slate-600 mb-1">Active</p>
+              <p className="text-xl md:text-2xl font-bold text-green-600">{stats.active}</p>
             </div>
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <CheckCircle className="w-6 h-6 text-green-600" />
+            <div className="w-10 h-10 md:w-12 md:h-12 bg-green-100 rounded-lg flex items-center justify-center shrink-0">
+              <CheckCircle className="w-5 h-5 md:w-6 md:h-6 text-green-600" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+        <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-slate-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-slate-600 mb-1">Trial</p>
-              <p className="text-2xl font-bold text-blue-600">{stats.trial}</p>
+              <p className="text-xs md:text-sm text-slate-600 mb-1">Trial</p>
+              <p className="text-xl md:text-2xl font-bold text-blue-600">{stats.trial}</p>
             </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Clock className="w-6 h-6 text-blue-600" />
+            <div className="w-10 h-10 md:w-12 md:h-12 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
+        <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-slate-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-slate-600 mb-1">Cancelled</p>
-              <p className="text-2xl font-bold text-red-600">{stats.cancelled}</p>
+              <p className="text-xs md:text-sm text-slate-600 mb-1">Cancelled</p>
+              <p className="text-xl md:text-2xl font-bold text-red-600">{stats.cancelled}</p>
             </div>
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <XCircle className="w-6 h-6 text-red-600" />
+            <div className="w-10 h-10 md:w-12 md:h-12 bg-red-100 rounded-lg flex items-center justify-center shrink-0">
+              <XCircle className="w-5 h-5 md:w-6 md:h-6 text-red-600" />
             </div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 shadow-lg text-white">
+        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 md:p-6 shadow-lg text-white">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-blue-100 text-sm mb-1">Monthly Recurring</p>
-              <p className="text-3xl font-bold">
+              <p className="text-blue-100 text-xs md:text-sm mb-1">Monthly Recurring</p>
+              <p className="text-2xl md:text-3xl font-bold">
                 ${subscriptions
                   .filter((s) => s.status === "active" && s.billingCycle === "monthly")
                   .reduce((sum, sub) => sum + (sub.planId.price.monthly || 0), 0)
                   .toFixed(2)}
               </p>
-              <p className="text-blue-100 text-xs mt-1">MRR from active plans</p>
+              <p className="text-blue-100 text-[10px] md:text-xs mt-1">MRR from active plans</p>
             </div>
-            <div className="w-14 h-14 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-              <DollarSign className="w-8 h-8 text-white" />
+            <div className="w-12 h-12 md:w-14 md:h-14 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm shrink-0">
+              <DollarSign className="w-6 h-6 md:w-8 md:h-8 text-white" />
             </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 mb-6">
-        <div className="flex flex-col md:flex-row gap-4">
+      <div className="bg-white rounded-xl p-4 md:p-6 shadow-sm border border-slate-200">
+        <div className="flex flex-col md:flex-row gap-3 md:gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input
@@ -285,13 +285,13 @@ export default function OrdersPage() {
               placeholder="Search by name, email, plan, or transaction ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2.5 text-sm md:text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full md:w-auto px-4 py-2.5 text-sm md:text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="all">All Status</option>
             <option value="active">Active</option>
@@ -303,29 +303,29 @@ export default function OrdersPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full min-w-[800px]">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider whitespace-nowrap">
                   User
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider whitespace-nowrap">
                   Plan
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider whitespace-nowrap">
                   Status
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider whitespace-nowrap">
                   Start Date
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider whitespace-nowrap">
                   End Date
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider whitespace-nowrap">
                   Transaction ID
                 </th>
-                <th className="px-6 py-4 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                <th className="px-4 md:px-6 py-4 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider whitespace-nowrap">
                   Actions
                 </th>
               </tr>
@@ -333,13 +333,13 @@ export default function OrdersPage() {
             <tbody className="divide-y divide-slate-200">
               {filteredSubscriptions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center">
+                  <td colSpan={7} className="px-4 md:px-6 py-8 md:py-12 text-center">
                     <div className="flex flex-col items-center">
-                      <Package className="w-12 h-12 text-slate-300 mb-3" />
+                      <Package className="w-10 h-10 md:w-12 md:h-12 text-slate-300 mb-3" />
                       <p className="text-slate-500 font-medium">
                         No subscriptions found
                       </p>
-                      <p className="text-sm text-slate-400 mt-1">
+                      <p className="text-xs md:text-sm text-slate-400 mt-1">
                         Try adjusting your search or filters
                       </p>
                     </div>
@@ -348,70 +348,70 @@ export default function OrdersPage() {
               ) : (
                 filteredSubscriptions.map((sub) => (
                   <tr key={sub._id} className="hover:bg-slate-50 transition">
-                    <td className="px-6 py-4">
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                          <User className="w-5 h-5 text-blue-600" />
+                        <div className="w-8 h-8 md:w-10 md:h-10 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
+                          <User className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
                         </div>
-                        <div>
-                          <p className="font-medium text-slate-900">
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-900 text-sm md:text-base truncate">
                             {sub.userId.name}
                           </p>
-                          <p className="text-sm text-slate-500">
+                          <p className="text-xs md:text-sm text-slate-500 truncate">
                             {sub.userId.email}
                           </p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <Package className="w-4 h-4 text-slate-400" />
-                        <span className="font-medium text-slate-900">
+                        <Package className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span className="font-medium text-slate-900 text-sm md:text-base">
                           {sub.planId.name}
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         {getStatusIcon(sub.status)}
                         {getStatusBadge(sub.status)}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2 text-slate-600">
-                        <Calendar className="w-4 h-4" />
-                        <span className="text-sm">
+                        <Calendar className="w-3 h-3 md:w-4 md:h-4 shrink-0" />
+                        <span className="text-xs md:text-sm">
                           {new Date(sub.startDate).toLocaleDateString()}
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2 text-slate-600">
-                        <Calendar className="w-4 h-4" />
-                        <span className="text-sm">
+                        <Calendar className="w-3 h-3 md:w-4 md:h-4 shrink-0" />
+                        <span className="text-xs md:text-sm">
                           {new Date(sub.endDate).toLocaleDateString()}
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <DollarSign className="w-4 h-4 text-slate-400" />
-                        <span className="text-sm font-mono text-slate-600">
+                        <DollarSign className="w-3 h-3 md:w-4 md:h-4 text-slate-400 shrink-0" />
+                        <span className="text-xs md:text-sm font-mono text-slate-600">
                           {sub.transactionId.substring(0, 20)}...
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-4 md:px-6 py-4 text-right whitespace-nowrap">
                       {sub.status === "active" || sub.status === "trial" ? (
                         <button
                           onClick={() => handleCancelSubscription(sub._id)}
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition font-medium text-sm"
+                          className="inline-flex items-center gap-1 md:gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition font-medium text-xs md:text-sm"
                         >
-                          <Ban className="w-4 h-4" />
+                          <Ban className="w-3 h-3 md:w-4 md:h-4" />
                           Cancel
                         </button>
                       ) : (
-                        <span className="text-sm text-slate-400">
+                        <span className="text-xs md:text-sm text-slate-400">
                           No actions
                         </span>
                       )}

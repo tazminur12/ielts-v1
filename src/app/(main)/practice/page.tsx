@@ -11,7 +11,7 @@ export default function PracticePage() {
       description: "Improve your reading speed and comprehension with real exam passages.",
       features: ["Academic & General Training", "Detailed explanations", "Vocabulary builder"],
       color: "border-green-100 hover:border-green-300 bg-green-50/50",
-      link: "/exam/reading"
+      link: "/practice/reading"
     },
     {
       title: "Listening Practice",
@@ -19,7 +19,7 @@ export default function PracticePage() {
       description: "Train your ear with diverse accents and realistic audio scenarios.",
       features: ["Interactive transcripts", "Variable playback speed", "Note-taking tools"],
       color: "border-blue-100 hover:border-blue-300 bg-blue-50/50",
-      link: "/exam/listening"
+      link: "/practice/listening"
     },
     {
       title: "Writing Practice",
@@ -27,7 +27,7 @@ export default function PracticePage() {
       description: "Master Task 1 and Task 2 with AI-powered grading and feedback.",
       features: ["Instant band score", "Grammar correction", "Model answers"],
       color: "border-orange-100 hover:border-orange-300 bg-orange-50/50",
-      link: "/exam/writing"
+      link: "/practice/writing"
     },
     {
       title: "Speaking Practice",
@@ -35,7 +35,7 @@ export default function PracticePage() {
       description: "Practice speaking with our AI examiner and gain fluency confidence.",
       features: ["Real-time simulation", "Pronunciation analysis", "Fluency tracking"],
       color: "border-red-100 hover:border-red-300 bg-red-50/50",
-      link: "/exam/speaking"
+      link: "/practice/speaking"
     }
   ];
 
@@ -64,9 +64,6 @@ export default function PracticePage() {
                 <div className="p-3 bg-white rounded-2xl shadow-sm border border-slate-100">
                   {module.icon}
                 </div>
-                <span className="px-3 py-1 bg-white/80 backdrop-blur text-slate-600 text-xs font-bold uppercase tracking-widest rounded-full border border-slate-100">
-                  Free Access
-                </span>
               </div>
               
               <h3 className="text-2xl font-bold text-slate-900 mb-3 group-hover:text-blue-600 transition-colors">
