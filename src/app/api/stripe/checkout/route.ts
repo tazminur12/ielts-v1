@@ -16,6 +16,12 @@ export async function POST(req: NextRequest) {
 
     const { planSlug, billingCycle, planName, price } = await req.json();
 
+    // Dynamically detect base URL — localhost te http, production e https auto
+    const host = req.headers.get("host") || "localhost:3000";
+    const proto = req.headers.get("x-forwarded-proto") || 
+      (host.startsWith("localhost") ? "http" : "https");
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${proto}://${host}`;
+
     // Create Stripe Checkout Session
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -37,8 +43,8 @@ export async function POST(req: NextRequest) {
         },
       ],
       customer_email: session.user.email,
-      success_url: `${process.env.NEXTAUTH_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}&plan=${planSlug}&billing=${billingCycle}`,
-      cancel_url: `${process.env.NEXTAUTH_URL}/pricing`,
+      success_url: `${baseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}&plan=${planSlug}&billing=${billingCycle}`,
+      cancel_url: `${baseUrl}/pricing`,
       metadata: {
         userId: session.user.id,
         planSlug,
