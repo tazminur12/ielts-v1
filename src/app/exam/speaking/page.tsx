@@ -5,14 +5,17 @@ import { useExam } from "@/components/exam/ExamContext";
 import { Mic, Square, Volume2 } from "lucide-react";
 
 export default function SpeakingPage() {
-  const { startExam } = useExam();
-  const [part, setPart] = useState(1);
+  const { startExam, currentQuestion, setCurrentQuestion } = useExam();
   const [isRecording, setIsRecording] = useState(false);
   const [questionText, setQuestionText] = useState("Can you tell me your full name?");
 
   useEffect(() => {
-    startExam("speaking", 15 * 60);
+    startExam("speaking", 15 * 60, 3);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const part = currentQuestion;
+  const setPart = setCurrentQuestion;
 
   const toggleRecording = () => {
     setIsRecording(!isRecording);

@@ -4,33 +4,53 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectDB from "@/lib/mongodb";
 import Answer from "@/models/Answer";
 import Attempt from "@/models/Attempt";
+import mongoose from "mongoose";
 import { evaluateWriting } from "@/lib/aiEvaluation";
+// Ensure Question model is loaded
+import Question from "@/models/Question";
 
 // POST /api/ai/writing
-// Body: { attemptId, answerId, task: "task1"|"task2", prompt, essay }
+// Body: { attemptId, questionId }
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-
+    
     await connectDB();
 
-    const { attemptId, answerId, task, prompt, essay } = await req.json();
-
-    if (!attemptId || !answerId || !task || !prompt || !essay) {
+    const { attemptId, questionId } = await req.json();
+    
+    if (!attemptId || !questionId) {
       return NextResponse.json({ message: "Missing required fields" }, { status: 400 });
     }
 
     // Verify ownership
     const attempt = await Attempt.findOne({ _id: attemptId, userId: session.user.id });
     if (!attempt) return NextResponse.json({ message: "Attempt not found" }, { status: 404 });
+    
+    // Find Answer
+    const answer = await Answer.findOne({ attemptId, questionId });
+    if (!answer || !answer.textAnswer) {
+      return NextResponse.json({ message: "No text answer found to evaluate" }, { status: 400 });
+    }
+
+    // Find Question to get prompt and task
+    const question = await Question.findById(questionId);
+    if (!question) {
+      return NextResponse.json({ message: "Question not found" }, { status: 404 });
+    }
+
+    // Attempt to guess task and prompt
+    const task = (question as any).taskType || "task2";
+    const prompt = (question as any).instruction || (question as any).text || "Write an essay";
+    const essay = answer.textAnswer;
 
     // Run OpenAI evaluation
     const evaluation = await evaluateWriting(task, prompt, essay);
 
     // Save evaluation to the Answer document
     const updatedAnswer = await Answer.findByIdAndUpdate(
-      answerId,
+      answer._id,
       {
         $set: {
           aiEvaluation: {

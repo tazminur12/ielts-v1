@@ -512,6 +512,7 @@ function CreateTestModal({
                 onChange={(e) => setForm({ ...form, accessLevel: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
+                <option value="free">Free Access</option>
                 {plans.map((plan) => (
                   <option key={plan.slug} value={plan.slug}>
                     {plan.name}
@@ -752,6 +753,7 @@ function EditTestModal({
                 onChange={(e) => setForm({ ...form, accessLevel: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
+                <option value="free">Free Access</option>
                 {plans.map((plan) => (
                   <option key={plan.slug} value={plan.slug}>
                     {plan.name}

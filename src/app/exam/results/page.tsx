@@ -219,8 +219,8 @@ function ResultsContent() {
   }
 
   // ── Derived data ─────────────────────────────────────────────────────────
-  const isPending = attempt.status === "submitted";
   const overallBand = attempt.overallBand ?? attempt.bandScore;
+  const isPending = attempt.status === "submitted" && !overallBand;
   const descriptor = overallBand ? getBandDescriptor(overallBand) : null;
 
   const objectiveAnswers = answers.filter(
@@ -241,64 +241,62 @@ function ResultsContent() {
   });
 
   return (
-    <div className="min-h-screen bg-[#f0f4f8]">
+    <div className="min-h-screen bg-[#f8fafc] font-sans pb-16">
 
       {/* ── Official Header ───────────────────────────────────────────── */}
-      <div className="bg-[#1a3a5c] text-white">
-        <div className="max-w-4xl mx-auto px-5 py-8">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-[#c8a84b] rounded-lg flex items-center justify-center shrink-0">
-                  <span className="text-[#1a3a5c] font-black text-sm">IB</span>
-                </div>
-                <div>
-                  <p className="text-[#c8a84b] text-[10px] font-bold tracking-[0.2em] uppercase">IELTS Band · Official Test Report</p>
-                  <p className="text-white font-bold text-base leading-tight">{attempt.testId?.title ?? "IELTS Examination"}</p>
-                </div>
+      <div className="bg-[#111827] text-white">
+        <div className="max-w-5xl mx-auto px-6 py-10">
+          <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
+            <div className="flex gap-5 items-center">
+              <div className="w-16 h-16 bg-linear-to-tr from-[#c8a84b] to-[#e6d086] rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-yellow-900/20">
+                <Target className="text-[#111827] w-8 h-8" />
               </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                <span className="text-slate-400 uppercase tracking-wide text-xs font-semibold">
-                  {attempt.testId?.module ?? attempt.module} · {attempt.testId?.examType ?? attempt.examType}
-                </span>
-                <span className="text-slate-500 text-xs">|</span>
-                <span className="text-slate-300 text-xs">{testDate}</span>
-                {attempt.timeSpent && (
-                  <>
-                    <span className="text-slate-500 text-xs">|</span>
-                    <span className="flex items-center gap-1 text-slate-300 text-xs">
-                      <Clock size={11} /> {formatTime(attempt.timeSpent)}
-                    </span>
-                  </>
-                )}
+              <div>
+                <p className="text-[#c8a84b] text-xs font-bold tracking-[0.25em] uppercase mb-1">Official Mock Test Report</p>
+                <h1 className="text-white font-extrabold text-3xl leading-tight tracking-tight">{attempt.testId?.title ?? "IELTS Practice Test"}</h1>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-sm">
+                  <span className="bg-white/10 px-3 py-1 rounded-full text-slate-200 capitalize font-medium">
+                    {attempt.testId?.module ?? attempt.module}
+                  </span>
+                  <span className="bg-white/10 px-3 py-1 rounded-full text-slate-200 capitalize font-medium">
+                    {attempt.testId?.examType ?? attempt.examType}
+                  </span>
+                  <span className="text-slate-400">|</span>
+                  <span className="text-slate-300 font-medium flex items-center gap-2">
+                    <Clock size={14} className="text-slate-400" />
+                    {testDate}
+                  </span>
+                </div>
               </div>
             </div>
 
             {/* Status badge */}
             {isPending ? (
-              <div className="shrink-0 flex items-center gap-2 bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-semibold px-3 py-1.5 rounded-full">
-                <Loader2 size={12} className="animate-spin" />
-                Evaluating…
+              <div className="shrink-0 flex items-center gap-2.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm font-bold px-5 py-2.5 rounded-full shadow-inner">
+                <Loader2 size={16} className="animate-spin" />
+                Generating Analysis
               </div>
             ) : (
-              <div className="shrink-0 flex items-center gap-2 bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-semibold px-3 py-1.5 rounded-full">
-                <Award size={12} />
-                Evaluated
+              <div className="shrink-0 flex items-center gap-2.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-bold px-5 py-2.5 rounded-full shadow-inner">
+                <CheckCircle size={16} />
+                Fully Evaluated
               </div>
             )}
           </div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-5 py-8 space-y-7">
+      <div className="max-w-5xl mx-auto px-6 mt-8 space-y-8">
 
         {/* ── Pending Notice ───────────────────────────────────────────── */}
         {isPending && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3">
-            <Loader2 size={18} className="text-amber-500 animate-spin shrink-0 mt-0.5" />
+          <div className="bg-linear-to-r from-amber-50 to-orange-50 border border-amber-200/60 rounded-2xl p-5 flex gap-4 shadow-sm">
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+               <Loader2 size={20} className="text-amber-600 animate-spin" />
+            </div>
             <div>
-              <p className="font-semibold text-amber-800 text-sm">AI Evaluation In Progress</p>
-              <p className="text-amber-700 text-xs mt-0.5">Your writing and speaking responses are being assessed. Band scores will appear shortly.</p>
+              <p className="font-bold text-amber-900 text-base">Processing Results</p>
+              <p className="text-amber-700 text-sm mt-1">If this includes Writing or Speaking, our AI examiner is reviewing your responses. This usually takes 1-2 minutes. Objective scores (Listening/Reading) are available immediately below.</p>
             </div>
           </div>
         )}

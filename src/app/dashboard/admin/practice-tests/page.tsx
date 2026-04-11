@@ -153,13 +153,80 @@ export default function AdminPracticeTestsPage() {
             Module-wise practice sets with instant feedback · {pagination.total} total
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium shadow-sm"
-        >
-          <Plus size={18} />
-          Create Practice Test
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => {
+              Swal.fire({
+                title: 'Generate Test with AI',
+                html: `
+                  <div class="space-y-3">
+                    <select id="ai-module" class="swal2-input w-full max-w-[90%] mx-auto mb-3" style="margin-top: 10px;">
+                      <option value="listening">Listening</option>
+                      <option value="reading">Reading</option>
+                      <option value="writing">Writing</option>
+                      <option value="speaking">Speaking</option>
+                    </select>
+                    <input id="ai-topic" class="swal2-input w-full max-w-[90%] mx-auto mb-3" placeholder="Topic (e.g. Technology)">
+                    <select id="ai-diff" class="swal2-input w-full max-w-[90%] mx-auto mb-3">
+                      <option value="easy">Easy</option>
+                      <option value="medium" selected>Medium</option>
+                      <option value="hard">Hard</option>
+                    </select>
+                    <select id="ai-access" class="swal2-input w-full max-w-[90%] mx-auto mb-3">
+                      <option value="free">Access</option>
+                      ${plans.map(p => `<option value="${p.slug}">${p.name}</option>`).join('')}
+                    </select>
+                  </div>
+                `,
+                focusConfirm: false,
+                showCancelButton: true,
+                confirmButtonText: 'Generate with AI',
+                showLoaderOnConfirm: true,
+                preConfirm: async () => {
+                  const aiModule = (document.getElementById('ai-module') as HTMLSelectElement).value;
+                  const topic = (document.getElementById('ai-topic') as HTMLInputElement).value;
+                  const difficulty = (document.getElementById('ai-diff') as HTMLSelectElement).value;
+                  const accessLevel = (document.getElementById('ai-access') as HTMLSelectElement).value;
+        
+                  try {
+                    const response = await fetch('/api/admin/tests/generate', {
+                      method: 'POST',
+                      headers: {'Content-Type': 'application/json'},
+                      body: JSON.stringify({
+                        title: `AI Generated ${topic || 'Practice'} (${aiModule})`,
+                        module: aiModule,
+                        topic, 
+                        difficulty,
+                        accessLevel
+                      })
+                    });
+                    const data = await response.json();
+                    if (!data.success) throw new Error(data.error);
+                    return data;
+                  } catch (error: any) {
+                    Swal.showValidationMessage(`Generation failed: ${error}`);
+                  }
+                }
+              }).then((result) => {
+                if (result.isConfirmed) {
+                  Swal.fire('Success!', 'AI generated the test successfully and it has been saved as a Draft.', 'success');
+                  fetchTests(1);
+                }
+              });
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-teal-500 to-emerald-600 text-white rounded-lg hover:from-teal-600 hover:to-emerald-700 transition font-medium shadow-sm"
+          >
+            <CheckCircle className="w-4 h-4" /> 
+            Generate AI Test
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium shadow-sm"
+          >
+            <Plus size={18} />
+            Create Practice Test
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -499,6 +566,7 @@ function CreatePracticeTestModal({
                 onChange={(e) => setForm({ ...form, accessLevel: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
               >
+                <option value="free">Free Access</option>
                 {plans.map((plan) => (
                   <option key={plan.slug} value={plan.slug}>
                     {plan.name}
@@ -739,6 +807,7 @@ function EditTestModal({
                 onChange={(e) => setForm({ ...form, accessLevel: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
               >
+                <option value="free">Free Access</option>
                 {plans.map((plan) => (
                   <option key={plan.slug} value={plan.slug}>
                     {plan.name}

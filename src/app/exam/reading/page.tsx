@@ -1,15 +1,24 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useExam } from "@/components/exam/ExamContext";
 
 export default function ReadingPage() {
-  const { startExam } = useExam();
+  const { startExam, currentQuestion, setCurrentQuestion } = useExam();
+  const rightPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Ensure we are in reading mode if accessed directly
-    startExam("reading", 60 * 60);
+    startExam("reading", 60 * 60, 40);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const el = document.getElementById(`question-${currentQuestion}`);
+    if (el && rightPanelRef.current) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [currentQuestion]);
 
   return (
     <div className="flex h-full">

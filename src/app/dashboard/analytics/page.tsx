@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   TrendingUp,
   // TrendingDown,
@@ -10,86 +10,48 @@ import {
   Activity,
   Calendar,
   Download,
+  Loader2,
 } from "lucide-react";
 
 export default function AnalyticsPage() {
   const [timeRange, setTimeRange] = useState<string>("7days");
-  // const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>(null);
 
-  // useEffect(() => {
-  //   // Simulate loading
-  //   setTimeout(() => setLoading(false), 800);
-  // }, []);
+  useEffect(() => {
+    fetchAnalytics();
+  }, []);
 
-  // Mock data
-  const stats = {
-    totalRevenue: 12450.5,
-    revenueChange: 18.2,
-    totalUsers: 1247,
-    usersChange: 12.5,
-    activeUsers: 892,
-    activeChange: 8.3,
-    totalTests: 3456,
-    testsChange: 15.7,
+  const fetchAnalytics = async () => {
+    try {
+      const response = await fetch("/api/admin/analytics");
+      const result = await response.json();
+      if (result.success) {
+        setData(result.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch analytics:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const revenueData = [
-    { month: "Jan", revenue: 8500 },
-    { month: "Feb", revenue: 12450 },
-  ];
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
-  const userGrowthData = [
-    { month: "Sep", users: 850 },
-    { month: "Oct", users: 920 },
-    { month: "Nov", users: 1050 },
-    { month: "Dec", users: 1150 },
-    { month: "Jan", users: 1190 },
-    { month: "Feb", users: 1247 },
-  ];
+  if (!data) {
+    return <div className="p-6 text-center text-gray-500">Failed to load analytics data.</div>;
+  }
 
-  const topProducts = [
-    { name: "Standard Plan", sales: 342, revenue: 27343.58 },
-    { name: "Premium Plan", sales: 89, revenue: 13349.11 },
-    { name: "Basic Plan", sales: 156, revenue: 4678.44 },
-    { name: "Enterprise Plan", sales: 12, revenue: 11999.88 },
-  ];
+  // Mock vs Real data assignments
+  const { stats, revenueData, userGrowthData, topProducts, recentActivity, usageByModule } = data;
 
-  const recentActivity = [
-    {
-      user: "John Doe",
-      action: "Completed Writing Mock Test",
-      time: "2 hours ago",
-    },
-    {
-      user: "Jane Smith",
-      action: "Subscribed to Premium Plan",
-      time: "3 hours ago",
-    },
-    {
-      user: "Bob Johnson",
-      action: "Completed Listening Practice",
-      time: "5 hours ago",
-    },
-    {
-      user: "Alice Williams",
-      action: "Started Speaking Module",
-      time: "6 hours ago",
-    },
-    {
-      user: "Charlie Brown",
-      action: "Renewed Enterprise Subscription",
-      time: "8 hours ago",
-    },
-  ];
-
-  const usageByModule = [
-    { module: "Listening", count: 1250, color: "bg-blue-500" },
-    { module: "Reading", count: 980, color: "bg-green-500" },
-    { module: "Writing", count: 756, color: "bg-purple-500" },
-    { module: "Speaking", count: 470, color: "bg-orange-500" },
-  ];
-
-  const maxUsage = Math.max(...usageByModule.map((m) => m.count));
+  const maxUsage = Math.max(...(usageByModule as any[]).map((m: any) => m.count));
 
   return (
     <div className="space-y-6">
@@ -227,7 +189,7 @@ export default function AnalyticsPage() {
             </div>
           </div>
           <div className="space-y-4">
-            {revenueData.map((data, index) => (
+            {revenueData.map((data: any, index: number) => (
               <div key={index}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-gray-600">
@@ -261,7 +223,7 @@ export default function AnalyticsPage() {
             </div>
           </div>
           <div className="space-y-3">
-            {userGrowthData.map((data, index) => (
+            {userGrowthData.map((data: any, index: number) => (
               <div key={index}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-gray-600">
@@ -298,7 +260,7 @@ export default function AnalyticsPage() {
             </div>
           </div>
           <div className="space-y-4">
-            {topProducts.map((product, index) => (
+            {topProducts.map((product: any, index: number) => (
               <div
                 key={index}
                 className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
@@ -334,7 +296,7 @@ export default function AnalyticsPage() {
             </div>
           </div>
           <div className="space-y-4">
-            {usageByModule.map((module, index) => (
+            {usageByModule.map((module: any, index: number) => (
               <div key={index}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-gray-700">
@@ -371,7 +333,7 @@ export default function AnalyticsPage() {
           </div>
         </div>
         <div className="space-y-3">
-          {recentActivity.map((activity, index) => (
+          {recentActivity.map((activity: any, index: number) => (
             <div
               key={index}
               className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors"
