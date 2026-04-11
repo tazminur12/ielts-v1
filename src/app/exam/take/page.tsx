@@ -573,13 +573,21 @@ function TakeExamContent() {
           ))}
         </div>
 
-        <button
-          onClick={() => setActiveSectionIdx((i) => Math.min(test.sections.length - 1, i + 1))}
-          disabled={activeSectionIdx === test.sections.length - 1}
-          className="flex items-center gap-1.5 text-sm font-medium text-[#1a3a5c] disabled:opacity-30 hover:underline transition-opacity"
-        >
-          Next Section <ChevronRight size={16} />
-        </button>
+        {activeSectionIdx === test.sections.length - 1 ? (
+          <button
+            onClick={() => setSubmitConfirm(true)}
+            className="flex items-center gap-1.5 text-sm font-bold text-white bg-[#1a3a5c] px-4 py-1.5 rounded-lg hover:bg-[#152a42] transition-colors"
+          >
+            Submit Exam <Send size={14} />
+          </button>
+        ) : (
+          <button
+            onClick={() => setActiveSectionIdx((i) => Math.min(test.sections.length - 1, i + 1))}
+            className="flex items-center gap-1.5 text-sm font-medium text-[#1a3a5c] hover:underline transition-opacity"
+          >
+            Next Section <ChevronRight size={16} />
+          </button>
+        )}
       </footer>
 
       {/* ── Submit Confirmation Modal ─────────────────────────────────────── */}

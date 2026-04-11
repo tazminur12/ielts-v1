@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 import { useExam } from "@/components/exam/ExamContext";
 
 export default function WritingPage() {
-  const { startExam } = useExam();
-  const [task, setTask] = useState(1);
+  const { startExam, currentQuestion, setCurrentQuestion } = useExam();
   const [text1, setText1] = useState("");
   const [text2, setText2] = useState("");
 
   useEffect(() => {
-    startExam("writing", 60 * 60);
+    startExam("writing", 60 * 60, 2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const task = currentQuestion;
+  const setTask = setCurrentQuestion;
 
   const countWords = (text: string) => {
     return text.trim().split(/\s+/).filter((w) => w.length > 0).length;
@@ -64,7 +67,7 @@ export default function WritingPage() {
                      </p>
                      <div className="bg-white p-6 border border-slate-200 rounded mb-6 shadow-sm">
                          <p className="font-medium mb-4 italic text-lg text-slate-800">
-                             "Some people believe that unpaid community service should be a compulsory part of high school programmes (for example working for a charity, improving the neighbourhood or teaching sports to younger children)."
+                             &quot;Some people believe that unpaid community service should be a compulsory part of high school programmes (for example working for a charity, improving the neighbourhood or teaching sports to younger children).&quot;
                          </p>
                          <p className="font-medium">To what extent do you agree or disagree?</p>
                      </div>

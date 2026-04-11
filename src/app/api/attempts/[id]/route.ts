@@ -105,7 +105,7 @@ export async function PATCH(
         const percentageScore = Math.round((rawScore / questions.length) * 100);
 
         await attempt.updateOne({
-          status: "submitted",
+          status: "evaluated",
           submittedAt: now,
           timeSpent,
           rawScore,

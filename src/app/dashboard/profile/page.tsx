@@ -161,6 +161,144 @@ export default function ProfilePage() {
     return Math.round((used / Number(total)) * 100);
   };
 
+  const isAdmin = session?.user?.role === "admin" || session?.user?.role === "super-admin";
+
+  if (isAdmin) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Admin Profile</h1>
+            <p className="text-slate-600 mt-1">
+              Manage your administrator details
+            </p>
+          </div>
+          {!isEditing ? (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+            >
+              <Edit className="w-4 h-4" />
+              Edit Profile
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setIsEditing(false);
+                  fetchProfile();
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition font-medium"
+              >
+                <X className="w-4 h-4" />
+                Cancel
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={loading}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium disabled:opacity-50"
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                Save Changes
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+              <h2 className="text-lg font-bold text-slate-900 mb-4">
+                Administrator Information
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    <User className="w-4 h-4 inline mr-2" />
+                    Full Name
+                  </label>
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={profile.name}
+                      onChange={(e) =>
+                        setProfile({ ...profile, name: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter your full name"
+                    />
+                  ) : (
+                    <p className="text-slate-900 px-4 py-2 bg-slate-50 rounded-lg">
+                      {profile.name}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    <Mail className="w-4 h-4 inline mr-2" />
+                    Email Address
+                  </label>
+                  <p className="text-slate-600 px-4 py-2 bg-slate-50 rounded-lg">
+                    {profile.email}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    <Phone className="w-4 h-4 inline mr-2" />
+                    Phone Number
+                  </label>
+                  {isEditing ? (
+                    <input
+                      type="tel"
+                      value={profile.phone}
+                      onChange={(e) =>
+                        setProfile({ ...profile, phone: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter your phone number"
+                    />
+                  ) : (
+                    <p className="text-slate-900 px-4 py-2 bg-slate-50 rounded-lg">
+                      {profile.phone || "Not provided"}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-6 shadow-lg text-white">
+              <div className="flex items-center gap-2 mb-4">
+                <Crown className="w-5 h-5 text-yellow-400" />
+                <h2 className="text-lg font-bold">Admin Status</h2>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-slate-300 text-sm">Role</p>
+                  <p className="text-2xl font-bold capitalize">
+                    {session?.user?.role}
+                  </p>
+                </div>
+                <div className="pt-3 border-t border-slate-700">
+                  <p className="text-sm text-slate-300">
+                    You have full access to manage users, plans, banners, and monitor the platform&apos;s performance from your dashboard.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
