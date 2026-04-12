@@ -154,44 +154,46 @@ export default function PricingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans">
+    <div className="min-h-screen bg-[#f8fafc] font-sans pb-20 mt-16 sm:mt-20">
       {/* Hero Section */}
-      <section className="pt-24 pb-16 px-4 sm:px-6 lg:px-8 bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto text-center">
-          <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-slate-900 mb-6 tracking-tight">
+      <section className="bg-white border-b border-slate-200 pt-12 pb-8 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-80 h-80 rounded-full bg-blue-50 blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-64 h-64 rounded-full bg-emerald-50 blur-3xl pointer-events-none"></div>
+
+        <div className="max-w-6xl mx-auto text-center relative z-10">
+          <h1 className="text-2xl md:text-4xl font-extrabold text-slate-900 mb-3 tracking-tight">
             Simple, Transparent <span className="text-blue-600">Pricing</span>
           </h1>
-          <p className="text-base md:text-lg text-slate-600 max-w-2xl mx-auto mb-10 leading-relaxed">
+          <p className="text-sm md:text-base text-slate-600 max-w-2xl mx-auto mb-6 leading-relaxed">
             Start for free, upgrade when you need more. No hidden fees, cancel anytime.
-            Join thousands of students achieving their dream band score.
           </p>
 
           {/* Billing Toggle */}
-          <div className="flex items-center justify-center space-x-4 mb-8">
-            <span className={`text-sm font-bold uppercase tracking-wide ${!isAnnual ? 'text-slate-900' : 'text-slate-500'}`}>
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <span className={`text-xs font-bold uppercase tracking-wide ${!isAnnual ? 'text-slate-900' : 'text-slate-500'}`}>
               Monthly
             </span>
             <button
               onClick={() => setIsAnnual(!isAnnual)}
               aria-label={isAnnual ? "Switch to monthly billing" : "Switch to annual billing"}
-              className="relative w-16 h-8 bg-slate-200 rounded-full p-1 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="relative w-14 h-7 bg-slate-300 rounded-full p-1 transition-colors duration-300 focus:outline-none"
             >
               <div
-                className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-300 ${
-                  isAnnual ? 'translate-x-8' : 'translate-x-0'
+                className={`w-5 h-5 bg-white rounded-full shadow-sm transform transition-transform duration-300 ${
+                  isAnnual ? 'translate-x-7' : 'translate-x-0'
                 }`}
               />
             </button>
-            <span className={`text-sm font-bold uppercase tracking-wide ${isAnnual ? 'text-slate-900' : 'text-slate-500'}`}>
-              Yearly <span className="text-green-500 ml-1 text-xs">(Save 20%)</span>
+            <span className={`text-xs font-bold uppercase tracking-wide ${isAnnual ? 'text-slate-900' : 'text-slate-500'}`}>
+              Yearly <span className="text-green-600 ml-1 text-xs">(Save 20%)</span>
             </span>
           </div>
         </div>
       </section>
 
       {/* Pricing Cards */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-        <div className={`grid gap-8 ${plans.length === 3 ? 'md:grid-cols-3' : plans.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-1 max-w-md mx-auto'}`}>
+      <section className="py-10 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto">
+        <div className={`grid gap-6 ${plans.length === 3 ? 'md:grid-cols-3' : plans.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-1 max-w-md mx-auto'}`}>
           {plans.map((plan) => {
             const features = getPlanFeatures(plan);
             const price = isAnnual ? plan.price.yearly : plan.price.monthly;
@@ -204,34 +206,34 @@ export default function PricingPage() {
             return (
               <div
                 key={plan._id}
-                className={`relative bg-white rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all flex flex-col ${
+                className={`relative bg-white rounded-lg p-6 shadow-sm hover:shadow-md transition-all flex flex-col ${
                   isPopular
-                    ? 'border-2 border-blue-600 shadow-blue-100 scale-105'
+                    ? 'border-2 border-blue-600'
                     : 'border border-slate-200'
                 }`}
               >
                 {isPopular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-xs font-bold uppercase tracking-wide px-4 py-1 rounded-full">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-xs font-bold uppercase tracking-wide px-3 py-1 rounded-full">
                     Most Popular
                   </div>
                 )}
 
-                <div className="mb-5">
+                <div className="mb-4">
                   <h3 className="text-lg font-bold text-slate-900">{plan.name}</h3>
-                  <p className="text-slate-500 text-xs mt-1 line-clamp-2">{plan.description}</p>
+                  <p className="text-slate-600 text-xs mt-1 line-clamp-2">{plan.description}</p>
                   {isUserPlan && (
-                    <div className="inline-block mt-3 text-xs font-semibold text-green-800 bg-green-100 px-3 py-1 rounded-full">
+                    <div className="inline-block mt-2 text-xs font-semibold text-green-800 bg-green-100 px-3 py-1 rounded-full">
                       Current plan
                     </div>
                   )}
                 </div>
 
-                <div className="mb-5">
+                <div className="mb-4">
                   <div className="flex items-baseline gap-1">
                     <span className="text-3xl font-extrabold text-slate-900">
                       ${price}
                     </span>
-                    <span className="text-slate-500 text-sm">/mo</span>
+                    <span className="text-slate-500 text-xs">/mo</span>
                   </div>
                   {isAnnual && price > 0 && (
                     <p className="text-xs text-green-600 font-medium mt-1">
@@ -240,16 +242,16 @@ export default function PricingPage() {
                   )}
                 </div>
 
-                <ul className="space-y-2.5 mb-6 flex-1">
-                  {features.slice(0, 6).map((feature, i) => (
+                <ul className="space-y-2 mb-5 flex-1">
+                  {features.slice(0, 5).map((feature, i) => (
                     <li key={i} className="flex items-start text-xs text-slate-700">
                       <Check className={`w-4 h-4 mr-2 shrink-0 mt-0.5 ${isPopular ? 'text-blue-600' : 'text-green-500'}`} />
                       <span className="leading-tight">{feature}</span>
                     </li>
                   ))}
-                  {features.length > 6 && (
+                  {features.length > 5 && (
                     <li className="text-xs text-slate-500 italic pl-6">
-                      +{features.length - 6} more features
+                      +{features.length - 5} more
                     </li>
                   )}
                 </ul>
@@ -258,18 +260,17 @@ export default function PricingPage() {
                   <div>
                     <button
                       disabled
-                      className="block w-full py-3 px-4 text-center text-sm font-bold rounded-lg bg-green-600 text-white cursor-default"
+                      className="block w-full py-2 px-4 text-center text-xs font-bold rounded-lg bg-green-600 text-white cursor-default"
                     >
                       Current Plan
                     </button>
-                    <p className="text-xs text-green-600 mt-2">You are subscribed to this plan.</p>
                   </div>
                 ) : (
                   <button
                     onClick={() => handleSubscribe(plan.slug)}
-                    className={`block w-full py-3 px-4 text-center text-sm font-bold rounded-lg transition-all ${
+                    className={`block w-full py-2 px-4 text-center text-xs font-bold rounded-lg transition-all ${
                       isPopular
-                        ? 'text-white bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg'
+                        ? 'text-white bg-blue-600 hover:bg-blue-700'
                         : plan.price.monthly === 0
                         ? 'text-blue-600 border-2 border-blue-200 bg-blue-50 hover:bg-blue-100'
                         : 'text-slate-700 border-2 border-slate-300 bg-white hover:border-slate-400'
@@ -278,7 +279,7 @@ export default function PricingPage() {
                     {plan.price.monthly === 0
                       ? 'Try Free'
                       : plan.trialDays > 0
-                      ? `Start ${plan.trialDays}-Day Trial`
+                      ? `${plan.trialDays}-Day Trial`
                       : `Get Started`}
                   </button>
                 )}
@@ -290,24 +291,24 @@ export default function PricingPage() {
 
       {/* Comparison Table */}
       {plans.length > 1 && (
-        <section className="hidden lg:block py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-          <h2 className="text-2xl md:text-3xl font-bold text-center text-slate-900 mb-12">
+        <section className="hidden lg:block py-10 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto">
+          <h2 className="text-2xl font-bold text-center text-slate-900 mb-8">
             Compare Features
           </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto bg-white rounded-lg border border-slate-200">
+            <table className="w-full text-left">
               <thead>
-                <tr>
-                  <th className="p-4 border-b-2 border-slate-200 text-lg font-semibold text-slate-900">
+                <tr className="border-b border-slate-200">
+                  <th className="p-4 font-semibold text-slate-900 text-sm">
                     Feature
                   </th>
                   {plans.map((plan) => (
                     <th
                       key={plan._id}
-                      className={`p-4 border-b-2 text-lg font-semibold text-center ${
+                      className={`p-4 font-semibold text-center text-sm ${
                         plan.isPremium
-                          ? 'border-blue-600 text-blue-600 bg-blue-50/50'
-                          : 'border-slate-200 text-slate-900'
+                          ? 'border-l border-blue-600 text-blue-600 bg-blue-50'
+                          : 'border-l border-slate-200 text-slate-900'
                       }`}
                     >
                       {plan.name}
@@ -320,20 +321,20 @@ export default function PricingPage() {
                   { label: "Mock Tests", key: "mockTests" },
                   { label: "Speaking Evaluations", key: "speakingEvaluations" },
                   { label: "Writing Corrections", key: "writingCorrections" },
-                  { label: "Analytics Dashboard", key: "hasAnalytics" },
-                  { label: "Personalized Study Plan", key: "hasPersonalizedPlan" },
+                  { label: "Analytics", key: "hasAnalytics" },
+                  { label: "Study Plan", key: "hasPersonalizedPlan" },
                   { label: "Priority Support", key: "hasPrioritySupport" },
                   { label: "1-on-1 Coaching", key: "has1on1Coaching" },
                 ].map((row, i) => (
-                  <tr key={i} className={i % 2 === 0 ? "bg-slate-50" : "bg-white"}>
-                    <td className="p-4 border-b border-slate-200 font-medium text-slate-700">
+                  <tr key={i} className={`border-b border-slate-200 ${i % 2 === 0 ? "bg-slate-50" : "bg-white"}`}>
+                    <td className="p-4 font-medium text-slate-700 text-sm">
                       {row.label}
                     </td>
                     {plans.map((plan) => (
                       <td
                         key={plan._id}
-                        className={`p-4 border-b border-slate-200 text-center ${
-                          plan.isPremium ? 'font-bold text-blue-600 bg-blue-50/30' : 'text-slate-600'
+                        className={`p-4 border-l text-center text-sm ${
+                          plan.isPremium ? 'font-bold text-blue-600 bg-blue-50/50 border-blue-200' : 'text-slate-600 border-slate-200'
                         }`}
                       >
                         {formatFeature(plan.features[row.key as keyof PlanFeatures] as number | "unlimited" | boolean)}
@@ -348,37 +349,37 @@ export default function PricingPage() {
       )}
 
       {/* FAQ Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-3xl mx-auto">
-        <h2 className="text-2xl md:text-3xl font-bold text-center text-slate-900 mb-10">Frequently Asked Questions</h2>
-        <div className="space-y-4">
+      <section className="py-10 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto">
+        <h2 className="text-2xl font-bold text-center text-slate-900 mb-8">Frequently Asked Questions</h2>
+        <div className="space-y-3">
           {[
             {
               q: "Can I change my plan after subscribing?",
-              a: "Yes. You may upgrade or downgrade at any time; changes are applied immediately. Any prorated charges or credits will be calculated based on your billing cycle and reflected on your next invoice."
+              a: "Yes. You can upgrade or downgrade at any time. Changes are applied immediately with prorated charges calculated based on your billing cycle."
             },
             {
-              q: "What does the 7‑day free trial include?",
-              a: "The trial grants full access to the Pro plan for seven days. If you cancel before the trial ends, you will not be charged. After the trial period, billing begins according to the selected billing cycle."
+              q: "What does the free trial include?",
+              a: "The trial grants full access to our platform for the specified period. If you cancel before the trial ends, you will not be charged."
             },
             {
-              q: "How accurate is the AI feedback?",
-              a: "Our AI models are trained on thousands of graded IELTS responses reviewed by certified examiners. They provide a reliable estimate of performance (typically within ±0.5 band), but should be used alongside human feedback for final evaluation."
+              q: "How accurate is the grading?",
+              a: "Our system uses standardized evaluation criteria aligned with official IELTS standards to provide reliable band score estimates."
             },
             {
-              q: "Do you offer institutional or volume pricing?",
-              a: "Yes. We provide custom pricing and deployment options for schools, coaching centres, and organisations. Please contact our sales team with your requirements and user count for a tailored proposal."
+              q: "Do you offer group or institutional pricing?",
+              a: "Yes. We provide custom pricing for schools and organizations. Please contact our sales team for tailored proposals."
             }
           ].map((faq, index) => (
-            <div key={index} className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+            <div key={index} className="border border-slate-200 rounded-lg overflow-hidden bg-white">
               <button
                 onClick={() => toggleFaq(index)}
-                className="w-full flex items-center justify-between p-5 text-left font-semibold text-slate-800 hover:bg-slate-50 transition-colors"
+                className="w-full flex items-center justify-between p-4 text-left font-semibold text-slate-800 hover:bg-slate-50 transition-colors text-sm"
               >
                 {faq.q}
-                {openFaq === index ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
+                {openFaq === index ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
               </button>
               {openFaq === index && (
-                <div className="p-5 pt-0 text-slate-600 leading-relaxed border-t border-slate-100 bg-slate-50/50">
+                <div className="p-4 pt-0 text-slate-600 leading-relaxed border-t border-slate-100 bg-slate-50/50 text-sm">
                   {faq.a}
                 </div>
               )}
@@ -388,21 +389,21 @@ export default function PricingPage() {
       </section>
 
       {/* CTA Footer */}
-      <section className="py-20 px-4 text-center bg-white text-slate-900">
-        <h2 className="text-2xl md:text-3xl font-bold mb-4">Ready to reach your target IELTS band?</h2>
-        <p className="text-base md:text-lg text-slate-600 mb-8 max-w-2xl mx-auto">
-          Start a focused, personalised study plan with AI-driven feedback and expert support. Trusted by over 50,000 students worldwide.
+      <section className="py-10 px-4 text-center bg-white border-t border-slate-200">
+        <h2 className="text-2xl font-bold text-slate-900 mb-3">Ready to achieve your IELTS goals?</h2>
+        <p className="text-slate-600 text-sm mb-6 max-w-2xl mx-auto">
+          Start your focused, personalized study plan with expert support. Trusted by thousands of students worldwide.
         </p>
-        <div className="flex items-center justify-center gap-4">
+        <div className="flex items-center justify-center gap-3 flex-wrap">
           <Link
             href="/signup"
-            className="inline-block py-3 px-8 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 hover:shadow transition-all"
+            className="inline-block py-2 px-6 bg-blue-600 text-white font-semibold text-sm rounded-lg hover:bg-blue-700 transition-all"
           >
             Get Started
           </Link>
           <Link
             href="/pricing#compare"
-            className="inline-block py-3 px-6 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-all"
+            className="inline-block py-2 px-5 border border-slate-300 text-slate-700 text-sm rounded-lg hover:bg-slate-50 transition-all"
           >
             Compare plans
           </Link>
