@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { module, title, topic, difficulty, accessLevel } = body;
+    const { module, title, topic, difficulty, accessLevel, questionCount = 5, questionTypes = ["mixed"] } = body;
 
     if (!module || !title) {
       return NextResponse.json({ success: false, error: "Module and Title are required" }, { status: 400 });
@@ -102,10 +102,19 @@ Please provide strictly in the following JSON format:
   ]
 }`;
     } else {
-        // generic for reading/listening for now (can map fully if needed)
-        prompt = `Act as an IELTS expert. Generate one short section for an IELTS ${module} test.
+        // generic for reading/listening for now
+        const typesList = Array.isArray(questionTypes) && questionTypes.length > 0 ? questionTypes.join(", ") : "mixed (multiple choice, true/false, fill in the blanks)";
+        prompt = `Act as an IELTS expert. Generate one complete section for an IELTS ${module} practice test.
 Topic: ${topic || "History"}
-Please provide strictly in the following JSON format:
+Difficulty: ${difficulty || "Medium"}
+
+Requirements:
+- Create exactly ${questionCount} questions in total.
+- Use the following question types: ${typesList}.
+- If the types require different instruction sets, split them into appropriate "groups". For example, use one group for multiple choice and another for true/false.
+- Provide a reading/listening passage as context for the questions.
+
+Please provide strictly in the following JSON format without any markdown wrappers or extra text:
 
 {
   "sectionTitle": "${module} Passage 1",
@@ -113,7 +122,7 @@ Please provide strictly in the following JSON format:
     {
       "title": "Questions 1-3",
       "instruction": "Choose the correct letter A, B, C, or D.",
-      "passage": "Write a 3-paragraph essay/passage about the topic.",
+      "passage": "Write a well-structured essay/passage about the topic.",
       "questions": [
         {
           "type": "multiple_choice",

@@ -18,6 +18,7 @@ import User from "@/models/User";
 import Subscription from "@/models/Subscription";
 import Assignment from "@/models/Assignment";
 import Plan from "@/models/Plan";
+import Attempt from "@/models/Attempt";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -161,16 +162,57 @@ export default async function DashboardPage() {
   }
 
   // Student Dashboard
+  await dbConnect();
+  
+  const userId = session?.user?.id;
+  
+  // Total Mock Tests Taken
+  const totalMockTests = await Attempt.countDocuments({
+    userId,
+    status: { $in: ["submitted", "evaluated"] },
+  });
+
+  // Recent Attempts
+  const recentAttempts = await Attempt.find({ userId })
+    .sort({ startedAt: -1 })
+    .limit(5)
+    .populate("testId", "title")
+    .lean();
+
+  // Average Band Score
+  const allEvaluated = await Attempt.find({ 
+    userId, 
+    status: "evaluated", 
+    bandScore: { $exists: true } 
+  }).lean();
+  
+  const avgBandRaw = allEvaluated.length > 0 
+    ? allEvaluated.reduce((acc, curr) => acc + (curr.bandScore || 0), 0) / allEvaluated.length 
+    : 0;
+  const avgBandScore = avgBandRaw > 0 ? avgBandRaw.toFixed(1) : "N/A";
+
+  // Total Practice Time (in hours)
+  const allCompleted = await Attempt.find({ 
+    userId, 
+    status: { $in: ["submitted", "evaluated"] }, 
+    timeSpent: { $exists: true } 
+  }).lean();
+  const totalTimeSeconds = allCompleted.reduce((acc, curr) => acc + (curr.timeSpent || 0), 0);
+  const totalHours = (totalTimeSeconds / 3600).toFixed(1);
+
+  // Completed Lessons (Mockup feature - setting it statically or based on progress)
+  const completedLessons = 3;
+
   return (
     <div className="space-y-6">
       {/* Welcome Section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-500">Welcome back! Here&apos;s your learning overview.</p>
+          <p className="text-gray-500">Welcome back, {session?.user?.name || "Student"}! Here&apos;s your learning overview.</p>
         </div>
         <Link
-          href="/dashboard/practice"
+          href="/start-mock"
           className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
         >
           <BookOpen className="w-4 h-4 mr-2" />
@@ -184,18 +226,14 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">Total Practice Time</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">12.5 hrs</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mt-1">{totalHours} hrs</h3>
             </div>
             <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
               <Clock className="w-5 h-5 text-blue-600" />
             </div>
           </div>
           <div className="mt-4 flex items-center text-sm">
-            <span className="text-green-600 font-medium flex items-center">
-              <TrendingUp className="w-3 h-3 mr-1" />
-              +2.5 hrs
-            </span>
-            <span className="text-gray-400 ml-2">vs last week</span>
+            <span className="text-gray-400">Time spent in mock tests</span>
           </div>
         </div>
 
@@ -203,14 +241,14 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">Mock Tests Taken</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">4</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mt-1">{totalMockTests}</h3>
             </div>
             <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center">
               <BookOpen className="w-5 h-5 text-purple-600" />
             </div>
           </div>
           <div className="mt-4 flex items-center text-sm">
-            <span className="text-gray-400">Next test recommended in 2 days</span>
+            <span className="text-gray-400">Total tests submitted</span>
           </div>
         </div>
 
@@ -218,18 +256,20 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">Average Band Score</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">6.5</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mt-1">{avgBandScore}</h3>
             </div>
             <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
               <Target className="w-5 h-5 text-green-600" />
             </div>
           </div>
           <div className="mt-4 flex items-center text-sm">
-            <span className="text-green-600 font-medium flex items-center">
-              <TrendingUp className="w-3 h-3 mr-1" />
-              +0.5
-            </span>
-            <span className="text-gray-400 ml-2">improvement</span>
+            {avgBandScore !== "N/A" ? (
+              <span className="text-green-600 font-medium flex items-center">
+                Keep practicing to improve!
+              </span>
+            ) : (
+             <span className="text-gray-400">Complete more tests to get score</span>
+            )}
           </div>
         </div>
 
@@ -237,14 +277,14 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-500">Completed Lessons</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">18/45</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mt-1">{completedLessons}/45</h3>
             </div>
             <div className="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center">
               <Award className="w-5 h-5 text-orange-600" />
             </div>
           </div>
           <div className="mt-4 w-full bg-gray-100 rounded-full h-1.5">
-            <div className="bg-orange-500 h-1.5 rounded-full" style={{ width: '40%' }}></div>
+            <div className="bg-orange-500 h-1.5 rounded-full w-[10%]"></div>
           </div>
         </div>
       </div>
@@ -255,36 +295,43 @@ export default async function DashboardPage() {
         <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
             <h3 className="font-semibold text-gray-900">Recent Activity</h3>
-            <Link href="/dashboard/history" className="text-sm text-blue-600 hover:text-blue-700 font-medium">
-              View all
+            <Link href="/dashboard/progress" className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+              View Progress
             </Link>
           </div>
           <div className="divide-y divide-gray-100">
-            {[
-              { title: "Speaking Mock Test #3", type: "Mock Test", score: "6.0", date: "2 hours ago" },
-              { title: "Academic Writing Task 1", type: "Practice", score: "Pending", date: "Yesterday" },
-              { title: "Listening Section 2", type: "Practice", score: "7.5", date: "2 days ago" },
-            ].map((item, i) => (
-              <div key={i} className="p-4 hover:bg-gray-50 transition-colors flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className={`w-2 h-2 rounded-full ${item.score === 'Pending' ? 'bg-yellow-400' : 'bg-green-500'}`}></div>
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-900">{item.title}</h4>
-                    <p className="text-xs text-gray-500">{item.type} • {item.date}</p>
+            {recentAttempts.length > 0 ? (
+              recentAttempts.map((item: any) => (
+                <div key={item._id} className="p-4 hover:bg-gray-50 transition-colors flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className={`w-2 h-2 rounded-full ${item.status === 'in_progress' ? 'bg-yellow-400' : 'bg-green-500'}`}></div>
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-900">{item.testId?.title || `${item.module} Exam`}</h4>
+                      <p className="text-xs text-gray-500 capitalize">{item.module} • {new Date(item.startedAt).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center">
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      item.status === 'in_progress' 
+                        ? 'bg-yellow-100 text-yellow-800' 
+                        : 'bg-green-100 text-green-800'
+                    }`}>
+                      {item.status === 'in_progress' 
+                        ? 'In Progress' 
+                        : (item.bandScore ? `Band ${item.bandScore}` : 'Evaluated')}
+                    </span>
+                    <ArrowRight className="w-4 h-4 text-gray-400 ml-4" />
                   </div>
                 </div>
-                <div className="flex items-center">
-                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    item.score === 'Pending' 
-                      ? 'bg-yellow-100 text-yellow-800' 
-                      : 'bg-green-100 text-green-800'
-                  }`}>
-                    {item.score === 'Pending' ? 'In Review' : `Band ${item.score}`}
-                  </span>
-                  <ArrowRight className="w-4 h-4 text-gray-400 ml-4" />
-                </div>
+              ))
+            ) : (
+              <div className="p-8 text-center">
+                <p className="text-gray-500 text-sm">No recent mock tests found.</p>
+                <Link href="/start-mock" className="text-blue-600 font-medium text-sm mt-2 block hover:underline">
+                  Take your first test
+                </Link>
               </div>
-            ))}
+             )}
           </div>
         </div>
 
