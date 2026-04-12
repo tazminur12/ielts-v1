@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectDB from "@/lib/mongodb";
+import { effectiveTestDurationMinutes } from "@/lib/testDuration";
 import Attempt from "@/models/Attempt";
 import Test from "@/models/Test";
 
@@ -62,14 +63,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "Test not found" }, { status: 404 });
     }
 
-    // Check for existing in-progress attempt
+    // Reuse or replace in-progress attempt (must match client timer / test card duration)
     const existing = await Attempt.findOne({
       userId: session.user.id,
       testId,
       status: "in_progress",
     });
     if (existing) {
-      return NextResponse.json({ attempt: existing, resumed: true });
+      const mins = effectiveTestDurationMinutes(test);
+      if (mins > 0) {
+        const totalSecs = mins * 60;
+        const startMs = existing.startedAt
+          ? new Date(existing.startedAt).getTime()
+          : Date.now();
+        const elapsed = Math.floor((Date.now() - startMs) / 1000);
+        if (elapsed < totalSecs) {
+          return NextResponse.json({ attempt: existing, resumed: true });
+        }
+        await Attempt.findByIdAndUpdate(existing._id, {
+          status: "submitted",
+          submittedAt: new Date(),
+          timeSpent: Math.min(elapsed, totalSecs),
+        });
+      } else {
+        return NextResponse.json({ attempt: existing, resumed: true });
+      }
     }
 
     const ipAddress =

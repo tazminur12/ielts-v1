@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Plus, Search, Filter, FileText, Clock,
-  CheckCircle, FileEdit, Trash2, Eye, Pencil,
+  CheckCircle, FileEdit, Trash2, Eye, Pencil, Sparkles,
 } from "lucide-react";
 import Swal from "sweetalert2";
 
@@ -154,12 +154,12 @@ export default function AdminPracticeTestsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Link 
+          <Link
             href="/dashboard/admin/practice-tests/generate"
             className="inline-flex items-center gap-2 px-4 py-2 bg-linear-to-r from-teal-500 to-emerald-600 text-white rounded-lg hover:from-teal-600 hover:to-emerald-700 transition font-medium shadow-sm"
           >
-            <CheckCircle className="w-4 h-4" /> 
-            Generate AI Test
+            <Sparkles className="w-4 h-4" />
+            Generate with AI
           </Link>
           <button
             onClick={() => setShowCreateModal(true)}
@@ -287,7 +287,7 @@ export default function AdminPracticeTestsPage() {
                         <Link
                           href={`/dashboard/admin/tests/${test._id}`}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition-colors"
-                          title="Manage Questions & Sections"
+                          title="Manage sections, bulk upload, and Generate with AI"
                         >
                           <Eye size={13} /> Manage
                         </Link>

@@ -19,11 +19,12 @@ import {
   Settings,
   Hash,
   GraduationCap,
+  LayoutGrid,
 } from "lucide-react";
 import Swal from "sweetalert2";
 import { AiGenerationLoadingOverlay } from "@/components/admin/AiGenerationLoadingOverlay";
 
-export default function GenerateAITestPage() {
+export default function GenerateMockTestPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [plans, setPlans] = useState<{ slug: string; name: string }[]>([]);
@@ -31,8 +32,23 @@ export default function GenerateAITestPage() {
   const [form, setForm] = useState({
     title: "",
     ieltsType: "Academic" as "Academic" | "General",
-    module: "reading" as "listening" | "reading" | "writing" | "speaking",
+    module: "reading" as
+      | "listening"
+      | "reading"
+      | "writing"
+      | "speaking"
+      | "full",
     topic: "",
+    /** Fallback when a full-mock section topic is left empty */
+    defaultTheme: "",
+    listeningTopic: "",
+    listeningTitle: "",
+    readingTopic: "",
+    readingTitle: "",
+    writingTopic: "",
+    writingTitle: "",
+    speakingTopic: "",
+    speakingTitle: "",
     difficulty: "medium",
     accessLevel: "free",
     questionCount: 10,
@@ -60,6 +76,8 @@ export default function GenerateAITestPage() {
           { id: "cue_card", label: "Cue Card (Part 2)" },
           { id: "discussion", label: "Discussion (Part 3)" },
         ];
+      case "full":
+        return [];
       default:
         return [];
     }
@@ -79,18 +97,14 @@ export default function GenerateAITestPage() {
   };
 
   useEffect(() => {
+    if (form.module === "full") {
+      setForm((prev) => ({ ...prev, questionCount: 32 }));
+      return;
+    }
     const types = availableTypesForModule();
-    if (types.length === 0) return;
-    setForm((prev) => {
-      let q = prev.questionCount;
-      if (form.module === "writing") q = 2;
-      else if (form.module === "speaking") q = 3;
-      else {
-        if (q === 2 || q === 3) q = 10;
-        else if (q < 1 || q > 20) q = 10;
-      }
-      return { ...prev, questionTypes: [types[0].id], questionCount: q };
-    });
+    if (types.length > 0) {
+      setForm((prev) => ({ ...prev, questionTypes: [types[0].id] }));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.module]);
 
@@ -107,26 +121,50 @@ export default function GenerateAITestPage() {
     try {
       const defaultTitle =
         form.title ||
-        `IELTS Practice — ${form.ieltsType} · ${form.topic || "General"} (${form.module})`;
+        `IELTS Mock — ${form.ieltsType} · ${
+          form.module === "full"
+            ? form.defaultTheme || "General"
+            : form.topic || "General"
+        } (${form.module})`;
+
+      const topicForApi =
+        form.module === "full"
+          ? form.defaultTheme || form.topic || "General"
+          : form.topic || "General";
 
       const response = await fetch("/api/admin/tests/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: defaultTitle,
-          examType: "practice",
+          examType: "mock",
           ieltsType: form.ieltsType,
           module: form.module,
-          topic: form.topic || "General",
+          topic: topicForApi,
           difficulty: form.difficulty,
           accessLevel: form.accessLevel,
           questionCount:
-            form.module === "writing"
-              ? 2
-              : form.module === "speaking"
-                ? 3
-                : form.questionCount,
-          questionTypes: form.questionTypes,
+            form.module === "full"
+              ? form.questionCount
+              : form.module === "writing"
+                ? 2
+                : form.module === "speaking"
+                  ? 3
+                  : form.questionCount,
+          questionTypes:
+            form.module === "full" ? ["mixed"] : form.questionTypes,
+          ...(form.module === "full"
+            ? {
+                listeningTopic: form.listeningTopic,
+                listeningTitle: form.listeningTitle,
+                readingTopic: form.readingTopic,
+                readingTitle: form.readingTitle,
+                writingTopic: form.writingTopic,
+                writingTitle: form.writingTitle,
+                speakingTopic: form.speakingTopic,
+                speakingTitle: form.speakingTitle,
+              }
+            : {}),
         }),
       });
       const data = await response.json();
@@ -139,8 +177,8 @@ export default function GenerateAITestPage() {
       }
 
       await Swal.fire({
-        title: "Practice set ready",
-        text: "Opening Manage — add more questions with “Generate with AI” if you like, then publish when ready.",
+        title: "Mock test ready",
+        text: "Opening Manage — refine sections, use “Generate with AI” for more questions, then publish when ready.",
         icon: "success",
         confirmButtonColor: "#2563eb",
       });
@@ -161,6 +199,7 @@ export default function GenerateAITestPage() {
       icon: Headphones,
       color: "text-blue-500",
       bg: "bg-blue-50",
+      border: "border-blue-200",
       selBorder: "border-blue-600",
       selBg: "bg-blue-50/80",
     },
@@ -170,6 +209,7 @@ export default function GenerateAITestPage() {
       icon: BookType,
       color: "text-emerald-500",
       bg: "bg-emerald-50",
+      border: "border-emerald-200",
       selBorder: "border-emerald-600",
       selBg: "bg-emerald-50/80",
     },
@@ -179,6 +219,7 @@ export default function GenerateAITestPage() {
       icon: PenTool,
       color: "text-violet-500",
       bg: "bg-violet-50",
+      border: "border-violet-200",
       selBorder: "border-violet-600",
       selBg: "bg-violet-50/80",
     },
@@ -188,26 +229,44 @@ export default function GenerateAITestPage() {
       icon: Mic,
       color: "text-rose-500",
       bg: "bg-rose-50",
+      border: "border-rose-200",
       selBorder: "border-rose-600",
       selBg: "bg-rose-50/80",
+    },
+    {
+      id: "full",
+      name: "Full mock",
+      icon: LayoutGrid,
+      color: "text-indigo-500",
+      bg: "bg-indigo-50",
+      border: "border-indigo-200",
+      selBorder: "border-indigo-600",
+      selBg: "bg-indigo-50/80",
     },
   ];
 
   const maxQuestions =
-    form.module === "writing" ? 2 : form.module === "speaking" ? 3 : 20;
-  const minQuestions = 1;
+    form.module === "full"
+      ? 48
+      : form.module === "writing"
+        ? 2
+        : form.module === "speaking"
+          ? 3
+          : 20;
+
+  const minQuestions = form.module === "full" ? 24 : 1;
 
   return (
     <>
       <AiGenerationLoadingOverlay
         open={loading}
-        label="practice test"
-        variant="practice"
+        label="mock exam"
+        variant="mock"
       />
       <div className="max-w-4xl mx-auto space-y-6 pb-12">
       <div className="flex items-center gap-4">
         <Link
-          href="/dashboard/admin/practice-tests"
+          href="/dashboard/admin/mock-tests"
           className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
         >
           <ArrowLeft size={20} />
@@ -215,10 +274,10 @@ export default function GenerateAITestPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2 text-gray-900">
             <BrainCircuit className="text-blue-600" />
-            Generate practice with AI
+            Generate mock exam with AI
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            Module-focused drills — same quality prompts as mock generation, saved as draft.
+            Timed, exam-style IELTS mock content — saved as draft for your review.
           </p>
         </div>
       </div>
@@ -255,9 +314,9 @@ export default function GenerateAITestPage() {
             <div className="space-y-3">
               <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                 <BookType size={16} className="text-gray-400" />
-                Module
+                Module or full test
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {modules.map((m) => {
                   const isSelected = form.module === m.id;
                   return (
@@ -288,22 +347,114 @@ export default function GenerateAITestPage() {
                   );
                 })}
               </div>
+              {form.module === "full" && (
+                <p className="text-xs text-gray-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                  Full mock generates four sections (Listening, Reading, Writing, Speaking) in one draft.
+                  Large output — generation may take 30–90 seconds.
+                </p>
+              )}
             </div>
 
             <div className="space-y-5 pt-2 border-t border-gray-100">
-              <div className="space-y-3">
-                <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <Type size={16} className="text-gray-400" />
-                  Topic / theme <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Climate change, urban transport, workplace skills…"
-                  value={form.topic}
-                  onChange={(e) => setForm({ ...form, topic: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+              {form.module !== "full" && (
+                <div className="space-y-3">
+                  <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <Type size={16} className="text-gray-400" />
+                    Theme / topic <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Urban development, Health, Education, Environment…"
+                    value={form.topic}
+                    onChange={(e) => setForm({ ...form, topic: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+
+              {form.module === "full" && (
+                <div className="space-y-4">
+                  <p className="text-xs text-gray-500">
+                    Set topic and section title for each skill. Empty topic uses the default theme below.
+                  </p>
+                  <div className="space-y-3">
+                    <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <Type size={16} className="text-gray-400" />
+                      Default theme <span className="text-gray-400 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Used when a section topic is left empty"
+                      value={form.defaultTheme}
+                      onChange={(e) => setForm({ ...form, defaultTheme: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50/50"
+                    />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {[
+                      {
+                        label: "Listening",
+                        topicKey: "listeningTopic" as const,
+                        titleKey: "listeningTitle" as const,
+                        border: "border-blue-100",
+                        bg: "bg-blue-50/40",
+                      },
+                      {
+                        label: "Reading",
+                        topicKey: "readingTopic" as const,
+                        titleKey: "readingTitle" as const,
+                        border: "border-emerald-100",
+                        bg: "bg-emerald-50/40",
+                      },
+                      {
+                        label: "Writing",
+                        topicKey: "writingTopic" as const,
+                        titleKey: "writingTitle" as const,
+                        border: "border-violet-100",
+                        bg: "bg-violet-50/40",
+                      },
+                      {
+                        label: "Speaking",
+                        topicKey: "speakingTopic" as const,
+                        titleKey: "speakingTitle" as const,
+                        border: "border-rose-100",
+                        bg: "bg-rose-50/40",
+                      },
+                    ].map((sk) => (
+                      <div
+                        key={sk.label}
+                        className={`rounded-xl border ${sk.border} ${sk.bg} p-4 space-y-3`}
+                      >
+                        <div className="text-sm font-semibold text-gray-900">{sk.label}</div>
+                        <div>
+                          <label className="text-xs font-medium text-gray-600">Topic</label>
+                          <input
+                            type="text"
+                            placeholder="Section theme"
+                            value={form[sk.topicKey]}
+                            onChange={(e) =>
+                              setForm({ ...form, [sk.topicKey]: e.target.value })
+                            }
+                            className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-gray-600">Section title</label>
+                          <input
+                            type="text"
+                            placeholder="Optional — e.g. Section 1"
+                            value={form[sk.titleKey]}
+                            onChange={(e) =>
+                              setForm({ ...form, [sk.titleKey]: e.target.value })
+                            }
+                            className="mt-1 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -319,32 +470,34 @@ export default function GenerateAITestPage() {
                 />
               </div>
 
-              <div className="space-y-3 pt-2">
-                <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <BrainCircuit size={16} className="text-gray-400" />
-                  Question types
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {availableTypesForModule().map((qt) => (
-                    <label
-                      key={qt.id}
-                      className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors select-none ${
-                        form.questionTypes.includes(qt.id)
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={form.questionTypes.includes(qt.id)}
-                        onChange={() => toggleQuestionType(qt.id)}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300"
-                      />
-                      <span className="text-sm font-medium text-gray-700">{qt.label}</span>
-                    </label>
-                  ))}
+              {form.module !== "full" && (
+                <div className="space-y-3 pt-2">
+                  <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <BrainCircuit size={16} className="text-gray-400" />
+                    Question types
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {availableTypesForModule().map((qt) => (
+                      <label
+                        key={qt.id}
+                        className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors select-none ${
+                          form.questionTypes.includes(qt.id)
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={form.questionTypes.includes(qt.id)}
+                          onChange={() => toggleQuestionType(qt.id)}
+                          className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300"
+                        />
+                        <span className="text-sm font-medium text-gray-700">{qt.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="pt-4">
@@ -356,12 +509,12 @@ export default function GenerateAITestPage() {
                 {loading ? (
                   <>
                     <Loader2 size={20} className="animate-spin" />
-                    Generating practice…
+                    Generating mock exam…
                   </>
                 ) : (
                   <>
                     <Sparkles size={20} />
-                    Generate practice with AI
+                    Generate mock with AI
                   </>
                 )}
                 {!loading && (
@@ -369,7 +522,7 @@ export default function GenerateAITestPage() {
                 )}
               </button>
               <p className="text-center text-xs text-gray-400 mt-4">
-                Usually 5–45 seconds depending on module and question count.
+                Single-module mocks usually finish in 15–45 seconds. Full mocks may take longer.
               </p>
             </div>
           </form>
@@ -379,7 +532,7 @@ export default function GenerateAITestPage() {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-6">
             <h3 className="font-bold text-gray-900 flex items-center gap-2 border-b border-gray-100 pb-3">
               <Settings className="text-gray-400 w-5 h-5" />
-              Practice settings
+              Exam settings
             </h3>
 
             <div className="space-y-3">
@@ -424,7 +577,7 @@ export default function GenerateAITestPage() {
               <div className="flex items-center justify-between">
                 <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                   <Hash size={16} className="text-gray-400" />
-                  Question count
+                  {form.module === "full" ? "Target questions (approx.)" : "Question count"}
                 </label>
                 <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg text-sm">
                   {form.questionCount}
@@ -468,12 +621,12 @@ export default function GenerateAITestPage() {
             </div>
           </div>
 
-          <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5">
-            <h4 className="text-sm font-bold text-slate-900 mb-2">Practice vs mock</h4>
-            <p className="text-xs text-slate-700 leading-relaxed">
-              Practice sets target one skill at a time with flexible timing. Mock tests use full-exam
-              framing and durations. Both use the same generation pipeline and authentic IELTS-style
-              prompts — review drafts before publishing.
+          <div className="bg-blue-50/80 border border-blue-100 rounded-2xl p-5">
+            <h4 className="text-sm font-bold text-blue-950 mb-2">Why this differs from practice</h4>
+            <p className="text-xs text-blue-900/90 leading-relaxed">
+              Mock tests use exam-style framing, IELTS-appropriate timing on the test record, and
+              stricter prompts so students experience a realistic run-through. Always review the
+              draft in Manage before publishing.
             </p>
           </div>
         </div>

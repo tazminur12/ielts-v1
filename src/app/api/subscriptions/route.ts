@@ -4,6 +4,11 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import dbConnect from "@/lib/mongodb";
 import Subscription from "@/models/Subscription";
 import Plan from "@/models/Plan";
+import User from "@/models/User";
+import {
+  repairStripePaidTrialsStillMarkedTrial,
+  syncExpiredSubscriptions,
+} from "@/lib/subscriptionSync";
 
 // GET user's subscription
 export async function GET() {
@@ -20,6 +25,8 @@ export async function GET() {
     }
 
     await dbConnect();
+    await repairStripePaidTrialsStillMarkedTrial();
+    await syncExpiredSubscriptions();
 
     const subscription = await Subscription.findOne({
       userId: session.user.id,
@@ -74,6 +81,23 @@ export async function POST(req: NextRequest) {
 
     console.log("Subscription request:", { planSlug, billingCycle, paymentMethod, transactionId, userId: session.user.id });
 
+    if (transactionId) {
+      const existingTxn = await Subscription.findOne({ transactionId });
+      if (existingTxn) {
+        await User.findByIdAndUpdate(session.user.id, {
+          currentSubscriptionId: existingTxn._id,
+        });
+        return NextResponse.json(
+          {
+            success: true,
+            data: existingTxn,
+            message: "Subscription already recorded",
+          },
+          { status: 200 }
+        );
+      }
+    }
+
     if (!planSlug || !billingCycle) {
       return NextResponse.json(
         {
@@ -117,25 +141,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Calculate end date
     const startDate = new Date();
-    const endDate = new Date(startDate);
-    
+    const paidStripeCheckout =
+      Boolean(transactionId) &&
+      paymentMethod === "card" &&
+      String(transactionId).startsWith("cs_");
+
+    /** Trial only when plan offers trial AND this is not a paid Stripe checkout (e.g. card trial signup without payment path). */
+    const useTrialPeriod = plan.trialDays > 0 && !paidStripeCheckout;
+
+    const billingEnd = new Date(startDate);
     if (billingCycle === "monthly") {
-      endDate.setMonth(endDate.getMonth() + 1);
+      billingEnd.setMonth(billingEnd.getMonth() + 1);
     } else if (billingCycle === "yearly") {
-      endDate.setFullYear(endDate.getFullYear() + 1);
+      billingEnd.setFullYear(billingEnd.getFullYear() + 1);
     }
+
+    const trialEnd = new Date(
+      startDate.getTime() + plan.trialDays * 24 * 60 * 60 * 1000
+    );
+
+    const endDate = useTrialPeriod ? trialEnd : billingEnd;
+    const status = useTrialPeriod ? "trial" : "active";
 
     // Create subscription
     const subscription = await Subscription.create({
       userId: session.user.id,
       planId: plan._id,
-      status: plan.trialDays > 0 ? "trial" : "active",
+      status,
       startDate,
-      endDate: plan.trialDays > 0 
-        ? new Date(startDate.getTime() + plan.trialDays * 24 * 60 * 60 * 1000)
-        : endDate,
+      endDate,
+      billingCycle: billingCycle as "monthly" | "yearly",
       paymentMethod,
       transactionId,
       features: {
@@ -150,6 +186,10 @@ export async function POST(req: NextRequest) {
         hasPrioritySupport: plan.features.hasPrioritySupport,
         has1on1Coaching: plan.features.has1on1Coaching,
       },
+    });
+
+    await User.findByIdAndUpdate(session.user.id, {
+      currentSubscriptionId: subscription._id,
     });
 
     return NextResponse.json(
@@ -187,6 +227,8 @@ export async function PUT(req: NextRequest) {
     }
 
     await dbConnect();
+    await repairStripePaidTrialsStillMarkedTrial();
+    await syncExpiredSubscriptions();
 
     const body = await req.json();
     const { action } = body; // 'cancel', 'renew', 'upgrade'
@@ -194,6 +236,7 @@ export async function PUT(req: NextRequest) {
     const subscription = await Subscription.findOne({
       userId: session.user.id,
       status: { $in: ["active", "trial"] },
+      endDate: { $gte: new Date() },
     });
 
     if (!subscription) {
@@ -210,6 +253,10 @@ export async function PUT(req: NextRequest) {
       subscription.status = "cancelled";
       subscription.autoRenew = false;
       await subscription.save();
+
+      await User.findByIdAndUpdate(session.user.id, {
+        $unset: { currentSubscriptionId: 1 },
+      });
 
       return NextResponse.json({
         success: true,
