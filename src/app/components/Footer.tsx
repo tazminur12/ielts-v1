@@ -78,16 +78,16 @@ const Footer = () => {
             <h3 className="text-white font-semibold text-lg mb-4">IELTS Modules</h3>
             <ul className="space-y-3">
               <li>
-                <Link href="/listening" className="text-gray-400 hover:text-white transition-colors">Listening Practice</Link>
+                <Link href="/practice/listening" className="text-gray-400 hover:text-white transition-colors">Listening Practice</Link>
               </li>
               <li>
-                <Link href="/reading" className="text-gray-400 hover:text-white transition-colors">Reading Practice</Link>
+                <Link href="/practice/reading" className="text-gray-400 hover:text-white transition-colors">Reading Practice</Link>
               </li>
               <li>
-                <Link href="/writing" className="text-gray-400 hover:text-white transition-colors">Writing Practice</Link>
+                <Link href="/practice/writing" className="text-gray-400 hover:text-white transition-colors">Writing Practice</Link>
               </li>
               <li>
-                <Link href="/speaking" className="text-gray-400 hover:text-white transition-colors">Speaking Practice</Link>
+                <Link href="/practice/speaking" className="text-gray-400 hover:text-white transition-colors">Speaking Practice</Link>
               </li>
               <li>
                 <Link href="/vocabulary" className="text-gray-400 hover:text-white transition-colors">Vocabulary List</Link>
@@ -118,9 +118,14 @@ const Footer = () => {
         </div>
 
         <div className="border-t border-gray-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
-          <p className="text-sm text-gray-400">
-            &copy; {new Date().getFullYear()} IELTS Practice Pro. All rights reserved.
-          </p>
+          <div className="text-center md:text-left">
+            <p className="text-sm text-gray-400">
+              &copy; {new Date().getFullYear()} IELTS Practice Pro. All rights reserved.
+            </p>
+            <p className="text-xs text-gray-500 mt-2">
+              Created by <a href="https://algowavelabs.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 transition-colors font-medium">Algowavelabs</a>
+            </p>
+          </div>
           <div className="flex space-x-6 mt-4 md:mt-0">
             <Link href="/privacy" className="text-sm text-gray-400 hover:text-white transition-colors">Privacy Policy</Link>
             <Link href="/terms" className="text-sm text-gray-400 hover:text-white transition-colors">Terms of Service</Link>

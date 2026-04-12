@@ -18,7 +18,7 @@ const demoOffer: OfferConfig = {
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-linear-to-b from-gray-50 to-white">
+    <main className="min-h-screen bg-linear-to-b from-gray-50 to-white mt-16 sm:mt-20">
       <Hero />
       <Carousel />
       <OfferBanner offer={demoOffer} />

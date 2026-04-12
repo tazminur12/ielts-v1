@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Plus, Search, Filter, BookOpen, Clock,
-  CheckCircle, FileEdit, Trash2, Eye, Pencil,
+  CheckCircle, FileEdit, Trash2, Eye, Pencil, Sparkles,
 } from "lucide-react";
 import Swal from "sweetalert2";
 
@@ -152,16 +152,27 @@ export default function AdminMockTestsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Mock Tests</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Manage full IELTS mock exams · {pagination.total} total
+            Manage full IELTS mock exams · {pagination.total} total ·{" "}
+            <span className="font-medium text-gray-600">Manage</span> opens sections,
+            bulk upload, and Generate with AI
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
-        >
-          <Plus size={18} />
-          Create Mock Test
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/dashboard/admin/mock-tests/generate"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-linear-to-r from-sky-500 to-blue-600 text-white rounded-lg hover:from-sky-600 hover:to-blue-700 transition font-medium shadow-sm"
+          >
+            <Sparkles size={18} />
+            Generate with AI
+          </Link>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+          >
+            <Plus size={18} />
+            Create Mock Test
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -281,7 +292,7 @@ export default function AdminMockTestsPage() {
                         <Link
                           href={`/dashboard/admin/tests/${test._id}`}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
-                          title="Manage Questions & Sections"
+                          title="Manage sections, bulk upload, and Generate with AI"
                         >
                           <Eye size={13} /> Manage
                         </Link>

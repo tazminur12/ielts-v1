@@ -4,6 +4,7 @@ import dbConnect from "@/lib/mongodb";
 import Subscription from "@/models/Subscription";
 import Plan from "@/models/Plan";
 import User from "@/models/User";
+import { syncExpiredSubscriptions } from "@/lib/subscriptionSync";
 
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -41,6 +42,12 @@ export async function POST(req: NextRequest) {
         const session = event.data.object;
         const { userId, planSlug, billingCycle } = session.metadata;
 
+        const dup = await Subscription.findOne({ transactionId: session.id });
+        if (dup) {
+          console.log("Checkout session already processed:", session.id);
+          break;
+        }
+
         // Get plan details
         const plan = await Plan.findOne({ slug: planSlug });
         if (!plan) {
@@ -64,6 +71,8 @@ export async function POST(req: NextRequest) {
           status: "active",
           startDate,
           endDate,
+          billingCycle: billingCycle === "yearly" ? "yearly" : "monthly",
+          autoRenew: true,
           paymentMethod: "card",
           transactionId: session.id,
           features: {
@@ -84,6 +93,8 @@ export async function POST(req: NextRequest) {
         await User.findByIdAndUpdate(userId, {
           currentSubscriptionId: subscription._id,
         });
+
+        await syncExpiredSubscriptions();
 
         console.log("Subscription created:", subscription._id);
         break;

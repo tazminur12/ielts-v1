@@ -7,6 +7,7 @@ import {
   Loader2, ChevronLeft, ChevronRight, BookOpen,
   Headphones, PenLine, MessageSquare, FileText,
 } from "lucide-react";
+import { effectiveTestDurationMinutes } from "@/lib/testDuration";
 
 // ─── Types (aligned with backend enums) ──────────────────────────────────────
 
@@ -231,7 +232,11 @@ function TakeExamContent() {
         const { test: rawTest, sections, groups, questions } = await testRes.json();
         const attemptData = await attemptRes.json();
 
-        const nested = buildNestedTest(rawTest, sections ?? [], groups ?? [], questions ?? []);
+        const durationMins = effectiveTestDurationMinutes(rawTest);
+        const nested = {
+          ...buildNestedTest(rawTest, sections ?? [], groups ?? [], questions ?? []),
+          duration: durationMins,
+        };
         setTest(nested);
         setAttemptId(attemptData.attempt._id);
 
@@ -249,7 +254,7 @@ function TakeExamContent() {
           }
         }
 
-        const totalSecs = rawTest.duration > 0 ? rawTest.duration * 60 : 0;
+        const totalSecs = durationMins > 0 ? durationMins * 60 : 0;
         if (totalSecs > 0) {
           // Deduct elapsed time if resuming an existing attempt
           let remaining = totalSecs;
@@ -425,11 +430,15 @@ function TakeExamContent() {
   // ── Loading & Error States ─────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#f0f4f8]">
-        <div className="text-center">
-          <div className="w-16 h-16 rounded-full border-4 border-[#1a3a5c] border-t-transparent animate-spin mx-auto mb-4" />
-          <p className="text-[#1a3a5c] font-semibold text-sm tracking-wide uppercase">Loading Examination</p>
-          <p className="text-slate-400 text-xs mt-1">Please wait…</p>
+      <div className="flex items-center justify-center min-h-dvh bg-[#e8e4dc]">
+        <div className="text-center px-6">
+          <div className="w-14 h-14 rounded-full border-[3px] border-[#0c1a2e] border-t-transparent animate-spin mx-auto mb-5" />
+          <p className="text-[#0c1a2e] font-semibold text-xs tracking-[0.2em] uppercase">
+            Preparing your test
+          </p>
+          <p className="text-slate-500 text-sm mt-2 max-w-xs mx-auto leading-relaxed">
+            Secure session loading. Please do not refresh this page.
+          </p>
         </div>
       </div>
     );
@@ -437,13 +446,17 @@ function TakeExamContent() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#f0f4f8]">
-        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-sm text-center">
-          <AlertCircle size={40} className="text-red-500 mx-auto mb-3" />
-          <p className="text-slate-800 font-bold text-lg mb-2">Unable to Load Exam</p>
-          <p className="text-slate-500 text-sm mb-6">{error}</p>
-          <button onClick={() => router.back()} className="px-6 py-2.5 bg-[#1a3a5c] text-white rounded-lg text-sm font-semibold hover:bg-[#0f2540] transition-colors">
-            Go Back
+      <div className="flex items-center justify-center min-h-dvh bg-[#e8e4dc] px-4">
+        <div className="bg-[#faf9f6] rounded-sm border border-[#d4cfc4] shadow-[0_4px_24px_rgba(12,26,46,0.08)] p-8 max-w-md w-full text-center">
+          <AlertCircle size={36} className="text-red-600 mx-auto mb-3" />
+          <p className="text-[#0c1a2e] font-bold text-lg mb-2">Session could not start</p>
+          <p className="text-slate-600 text-sm mb-6 leading-relaxed">{error}</p>
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="w-full sm:w-auto px-8 py-3 bg-[#0c1a2e] text-white text-sm font-semibold hover:bg-[#050d16] transition-colors border border-[#0c1a2e]"
+          >
+            Return
           </button>
         </div>
       </div>
@@ -453,51 +466,71 @@ function TakeExamContent() {
   if (!test) return null;
 
   return (
-    <div className="flex flex-col h-screen bg-[#f0f4f8] overflow-hidden font-sans">
+    <div className="flex flex-col min-h-dvh h-dvh max-h-dvh bg-[#e8e4dc] overflow-hidden font-sans text-slate-900">
 
-      {/* ── Top Bar ─────────────────────────────────────────────────────── */}
-      <header className="bg-[#1a3a5c] text-white px-5 py-0 flex items-stretch justify-between shrink-0 shadow-lg z-20">
-        {/* Brand */}
-        <div className="flex items-center gap-3 py-3">
-          <div className="w-8 h-8 bg-[#c8a84b] rounded flex items-center justify-center">
-            <span className="text-[#1a3a5c] font-black text-xs">IB</span>
+      {/* Official-style candidate notice */}
+      <div className="bg-[#050d16] text-slate-400 text-[10px] sm:text-[11px] px-3 sm:px-5 py-1.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 shrink-0 border-b border-white/6">
+        <span className="font-semibold tracking-[0.12em] uppercase text-slate-500 text-center sm:text-left">
+          Computer-delivered test
+        </span>
+        <span className="text-center sm:text-right text-slate-500 hidden md:block">
+          Do not refresh. Answers save automatically.
+        </span>
+      </div>
+
+      {/* ── Main chrome ───────────────────────────────────────────────────── */}
+      <header className="bg-[#0c1a2e] text-white px-3 sm:px-5 py-0 flex items-stretch justify-between shrink-0 shadow-[0_2px_12px_rgba(0,0,0,0.2)] z-20 border-b border-[#c9a227]/25">
+        <div className="flex items-center gap-2.5 sm:gap-3 py-2.5 sm:py-3 min-w-0">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 bg-[#c9a227] shrink-0 flex items-center justify-center border border-[#e4c96a]/30">
+            <span className="text-[#0c1a2e] font-black text-[10px] sm:text-xs tracking-tight">CD</span>
           </div>
-          <div className="hidden sm:block">
-            <p className="text-white font-bold text-sm leading-none">IELTS Band</p>
-            <p className="text-[#c8a84b] text-[10px] font-medium tracking-widest uppercase">{test.module} — {test.examType}</p>
+          <div className="min-w-0">
+            <p className="text-white font-bold text-xs sm:text-sm leading-tight truncate">
+              IELTS preparation
+            </p>
+            <p className="text-[#c9a227] text-[9px] sm:text-[10px] font-semibold tracking-[0.15em] uppercase truncate">
+              {test.module} · {test.examType}
+            </p>
           </div>
         </div>
 
-        {/* Title */}
-        <div className="hidden lg:flex items-center">
-          <p className="text-slate-300 text-sm font-medium truncate max-w-xs">{test.title}</p>
+        <div className="hidden md:flex items-center px-4 max-w-md lg:max-w-lg min-w-0">
+          <p className="text-slate-400 text-xs font-medium truncate text-center w-full border-x border-white/10 px-3">
+            {test.title}
+          </p>
         </div>
 
-        {/* Controls */}
-        <div className="flex items-center gap-4 py-3">
-          <div className="hidden sm:flex flex-col items-end">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider">Progress</span>
-            <span className="text-white font-semibold text-sm">{answeredCount} / {totalQuestions}</span>
+        <div className="flex items-center gap-2 sm:gap-3 py-2.5 sm:py-3 shrink-0">
+          <div className="hidden sm:flex flex-col items-end pr-1 border-r border-white/10 mr-1">
+            <span className="text-[9px] text-slate-500 uppercase tracking-wider">Progress</span>
+            <span className="text-white font-semibold text-sm tabular-nums">
+              {answeredCount} / {totalQuestions}
+            </span>
           </div>
 
           {test.duration > 0 && (
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-mono font-bold text-base transition-colors ${
-              isCriticalTime
-                ? "bg-red-600/30 text-red-300 animate-pulse ring-1 ring-red-500/50"
-                : isLowTime
-                ? "bg-amber-500/20 text-amber-300"
-                : "bg-[#c8a84b]/20 text-[#c8a84b]"
-            }`}>
-              <Clock size={15} />
+            <div
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 font-mono text-sm sm:text-base font-bold tabular-nums transition-colors border ${
+                isCriticalTime
+                  ? "bg-red-950/50 text-red-200 border-red-500/40 animate-pulse"
+                  : isLowTime
+                    ? "bg-amber-950/40 text-amber-200 border-amber-500/30"
+                    : "bg-[#0c1a2e] text-[#c9a227] border-[#c9a227]/35"
+              }`}
+            >
+              <Clock size={14} className="shrink-0 opacity-90" />
               {formatTime(timeLeft)}
-              {isCriticalTime && <span className="text-[10px] font-bold tracking-widest uppercase ml-1">!</span>}
+              {isCriticalTime && (
+                <span className="text-[9px] font-bold tracking-widest ml-0.5">!</span>
+              )}
             </div>
           )}
 
           <button
+            type="button"
             onClick={confirmAndSubmit}
             disabled={submitting}
-            className="flex items-center gap-2 bg-[#c8a84b] hover:bg-[#b8943b] disabled:opacity-60 text-[#1a3a5c] font-bold text-sm px-5 py-2 rounded-lg transition-colors shadow-sm"
+            className="flex items-center gap-1.5 sm:gap-2 bg-[#c9a227] hover:bg-[#b89220] disabled:opacity-60 text-[#0c1a2e] font-bold text-xs sm:text-sm px-3 sm:px-5 py-2 transition-colors border border-[#dfc45a]/40 shadow-sm"
           >
             {submitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             Submit
@@ -505,8 +538,8 @@ function TakeExamContent() {
         </div>
       </header>
 
-      {/* ── Section Tabs ────────────────────────────────────────────────── */}
-      <div className="bg-[#0f2540] flex items-center gap-0 shrink-0 overflow-x-auto scrollbar-hide">
+      {/* ── Section parts (test booklet style) ─────────────────────────── */}
+      <div className="bg-[#081220] flex items-stretch gap-0 shrink-0 overflow-x-auto">
         {test.sections.map((sec, idx) => {
           const secTotal = sec.groups.flatMap((g) => g.questions).length;
           const secAnswered = sec.groups.flatMap((g) => g.questions).filter((q) => answers[q._id]).length;
@@ -514,16 +547,26 @@ function TakeExamContent() {
           return (
             <button
               key={sec._id}
+              type="button"
               onClick={() => setActiveSectionIdx(idx)}
-              className={`flex items-center gap-2 px-5 py-3 text-xs font-semibold whitespace-nowrap transition-all border-b-2 ${
+              aria-label={`${sectionLabel(sec.sectionType)}: ${sec.title || `Part ${sec.order}`}`}
+              className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all border-b-2 min-h-[44px] ${
                 active
-                  ? "text-[#c8a84b] border-[#c8a84b] bg-[#1a3a5c]"
-                  : "text-slate-400 border-transparent hover:text-slate-200 hover:bg-[#152a42]"
+                  ? "text-[#c9a227] border-[#c9a227] bg-[#0c1a2e]"
+                  : "text-slate-500 border-transparent hover:text-slate-200 hover:bg-[#0c1a2e]/60"
               }`}
             >
               {sectionIcon(sec.sectionType)}
-              <span className="uppercase tracking-wider">{sec.title || `${sectionLabel(sec.sectionType)} ${sec.order}`}</span>
-              <span className={`text-[10px] font-normal px-1.5 py-0.5 rounded-full ${active ? "bg-[#c8a84b]/20 text-[#c8a84b]" : "bg-slate-700 text-slate-400"}`}>
+              <span className="uppercase tracking-[0.08em] max-w-[140px] sm:max-w-none truncate">
+                {sec.title || `Part ${sec.order}`}
+              </span>
+              <span
+                className={`text-[10px] font-semibold tabular-nums px-1.5 py-0.5 border ${
+                  active
+                    ? "border-[#c9a227]/40 text-[#c9a227] bg-[#c9a227]/10"
+                    : "border-white/10 text-slate-500 bg-black/20"
+                }`}
+              >
                 {secAnswered}/{secTotal}
               </span>
             </button>
@@ -550,69 +593,102 @@ function TakeExamContent() {
         )}
       </main>
 
-      {/* ── Section Nav Footer ───────────────────────────────────────────── */}
-      <footer className="bg-white border-t border-slate-200 px-5 py-2.5 flex items-center justify-between shrink-0">
+      {/* ── Section navigation (footer) ─────────────────────────────────── */}
+      <footer className="bg-[#faf9f6] border-t-2 border-[#0c1a2e]/10 px-3 sm:px-5 py-2.5 flex items-center justify-between gap-2 shrink-0 shadow-[0_-4px_20px_rgba(12,26,46,0.06)]">
         <button
+          type="button"
           onClick={() => setActiveSectionIdx((i) => Math.max(0, i - 1))}
           disabled={activeSectionIdx === 0}
-          className="flex items-center gap-1.5 text-sm font-medium text-[#1a3a5c] disabled:opacity-30 hover:underline transition-opacity"
+          className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#0c1a2e] disabled:opacity-35 disabled:cursor-not-allowed hover:opacity-80 transition-opacity"
         >
-          <ChevronLeft size={16} /> Previous Section
+          <ChevronLeft size={18} /> <span className="hidden sm:inline">Previous part</span>
         </button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {test.sections.map((_, i) => (
             <button
               key={i}
+              type="button"
               onClick={() => setActiveSectionIdx(i)}
-              className={`rounded-full transition-all ${
-                i === activeSectionIdx ? "w-6 h-2.5 bg-[#1a3a5c]" : "w-2.5 h-2.5 bg-slate-200 hover:bg-slate-400"
+              className={`h-2 rounded-full transition-all ${
+                i === activeSectionIdx
+                  ? "w-8 bg-[#c9a227]"
+                  : "w-2 bg-slate-300 hover:bg-slate-400"
               }`}
-              aria-label={`Section ${i + 1}`}
+              aria-label={`Part ${i + 1}`}
+              aria-current={i === activeSectionIdx ? "step" : undefined}
             />
           ))}
         </div>
 
         {activeSectionIdx === test.sections.length - 1 ? (
           <button
+            type="button"
             onClick={() => setSubmitConfirm(true)}
-            className="flex items-center gap-1.5 text-sm font-bold text-white bg-[#1a3a5c] px-4 py-1.5 rounded-lg hover:bg-[#152a42] transition-colors"
+            className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-[#0c1a2e] bg-[#c9a227] px-3 sm:px-4 py-2 hover:bg-[#b89220] transition-colors border border-[#dfc45a]/50"
           >
-            Submit Exam <Send size={14} />
+            End test <Send size={14} />
           </button>
         ) : (
           <button
-            onClick={() => setActiveSectionIdx((i) => Math.min(test.sections.length - 1, i + 1))}
-            className="flex items-center gap-1.5 text-sm font-medium text-[#1a3a5c] hover:underline transition-opacity"
+            type="button"
+            onClick={() =>
+              setActiveSectionIdx((i) =>
+                Math.min(test.sections.length - 1, i + 1)
+              )
+            }
+            className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#0c1a2e] hover:opacity-80 transition-opacity"
           >
-            Next Section <ChevronRight size={16} />
+            <span className="hidden sm:inline">Next part</span> <ChevronRight size={18} />
           </button>
         )}
       </footer>
 
-      {/* ── Submit Confirmation Modal ─────────────────────────────────────── */}
+      {/* ── End test confirmation ───────────────────────────────────────── */}
       {submitConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-            <AlertCircle size={36} className="text-amber-500 mx-auto mb-4" />
-            <h3 className="text-slate-800 font-bold text-lg text-center mb-2">Submit Examination?</h3>
-            <p className="text-slate-500 text-sm text-center mb-6">
-              You have <strong className="text-amber-600">{allQuestions().filter((q) => !answers[q._id]).length} unanswered</strong> question(s).
-              Once submitted, you cannot return to this test.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setSubmitConfirm(false)}
-                className="flex-1 py-2.5 border border-slate-200 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-colors"
+        <div
+          className="fixed inset-0 bg-[#0c1a2e]/70 backdrop-blur-[2px] z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="submit-dialog-title"
+        >
+          <div className="bg-[#faf9f6] max-w-md w-full border border-[#d4cfc4] shadow-[0_16px_48px_rgba(0,0,0,0.2)]">
+            <div className="h-1 bg-[#c9a227]" />
+            <div className="p-6 sm:p-8">
+              <AlertCircle size={32} className="text-amber-600 mx-auto mb-3" />
+              <h3
+                id="submit-dialog-title"
+                className="text-[#0c1a2e] font-bold text-lg text-center mb-2"
               >
-                Continue Exam
-              </button>
-              <button
-                onClick={() => { setSubmitConfirm(false); handleSubmit(); }}
-                className="flex-1 py-2.5 bg-[#1a3a5c] text-white rounded-xl text-sm font-bold hover:bg-[#0f2540] transition-colors"
-              >
-                Submit Anyway
-              </button>
+                End this test?
+              </h3>
+              <p className="text-slate-600 text-sm text-center leading-relaxed mb-6">
+                You have{" "}
+                <strong className="text-amber-700 tabular-nums">
+                  {allQuestions().filter((q) => !answers[q._id]).length}
+                </strong>{" "}
+                question(s) without an answer. After submission you cannot change
+                your responses.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSubmitConfirm(false)}
+                  className="flex-1 py-3 border border-[#d4cfc4] text-[#0c1a2e] text-sm font-semibold hover:bg-white transition-colors"
+                >
+                  Continue test
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSubmitConfirm(false);
+                    handleSubmit();
+                  }}
+                  className="flex-1 py-3 bg-[#0c1a2e] text-white text-sm font-bold hover:bg-[#050d16] transition-colors border border-[#0c1a2e]"
+                >
+                  Submit now
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -656,8 +732,10 @@ function SectionView({
   const Questions = (
     <div className="space-y-5">
       {section.instructions && (
-        <div className="bg-blue-50 border-l-4 border-[#1a3a5c] px-4 py-3 rounded-r-lg">
-          <p className="text-xs font-semibold text-[#1a3a5c] uppercase tracking-wide mb-1">Instructions</p>
+        <div className="bg-[#faf9f6] border border-[#d4cfc4] border-l-[3px] border-l-[#c9a227] px-4 py-3">
+          <p className="text-[10px] font-bold text-[#0c1a2e] uppercase tracking-[0.15em] mb-1.5">
+            Instructions to candidates
+          </p>
           <p className="text-sm text-slate-700 leading-relaxed">{section.instructions}</p>
         </div>
       )}
@@ -680,29 +758,40 @@ function SectionView({
     </div>
   );
 
-  /* ── Reading: split-pane ─────────────────────────────────────────────── */
+  /* ── Reading: split-pane (question booklet + answer sheet feel) ─────── */
   if (isReading && section.passageText) {
     return (
-      <div className="flex h-full overflow-hidden">
-        {/* Passage panel */}
-        <div className="w-1/2 shrink-0 overflow-y-auto border-r border-slate-200 bg-white">
-          <div className="p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-1 h-5 bg-[#1a3a5c] rounded-full" />
-              <h2 className="text-base font-bold text-[#1a3a5c]">{section.title}</h2>
+      <div className="flex h-full min-h-0 overflow-hidden">
+        <div className="w-1/2 min-w-0 shrink-0 overflow-y-auto border-r border-[#d4cfc4] bg-[#faf9f6] shadow-[inset_-8px_0_24px_-12px_rgba(12,26,46,0.06)]">
+          <div className="p-6 sm:p-8 max-w-2xl mx-auto">
+            <div className="flex items-center gap-2 mb-5 pb-3 border-b border-[#d4cfc4]">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c9a227]">
+                Reading passage
+              </span>
             </div>
+            <h2 className="text-lg font-bold text-[#0c1a2e] mb-4 leading-snug">
+              {section.title}
+            </h2>
             {section.passageImage && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={section.passageImage} alt="Passage illustration" className="w-full rounded-lg mb-4 border border-slate-200" />
+              <img
+                src={section.passageImage}
+                alt="Passage illustration"
+                className="w-full mb-5 border border-[#d4cfc4]"
+              />
             )}
-            <div className="prose prose-sm max-w-none text-slate-700 leading-[1.9] text-[14px] font-serif whitespace-pre-wrap selection:bg-yellow-200">
+            <div className="text-slate-800 leading-[1.85] text-[15px] font-serif whitespace-pre-wrap selection:bg-amber-100">
               {section.passageText}
             </div>
           </div>
         </div>
-        {/* Questions panel */}
-        <div className="flex-1 overflow-y-auto bg-[#f0f4f8]">
-          <div className="p-5">{Questions}</div>
+        <div className="flex-1 min-w-0 overflow-y-auto bg-[#e8e4dc]">
+          <div className="p-4 sm:p-6 max-w-3xl">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-3">
+              Questions
+            </p>
+            {Questions}
+          </div>
         </div>
       </div>
     );
@@ -711,21 +800,24 @@ function SectionView({
   /* ── Listening: audio header + questions ─────────────────────────────── */
   if (isListening) {
     return (
-      <div className="h-full overflow-y-auto bg-[#f0f4f8]">
+      <div className="h-full overflow-y-auto bg-[#e8e4dc]">
         <div className="max-w-3xl mx-auto p-5 space-y-5">
           {/* Audio player card */}
           {section.audioUrl && (
-            <div className="bg-[#1a3a5c] rounded-2xl p-5 shadow-lg">
+            <div className="bg-[#0c1a2e] border border-[#c9a227]/35 p-4 sm:p-5 shadow-[0_8px_32px_rgba(0,0,0,0.25)]">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-9 h-9 bg-[#c8a84b] rounded-full flex items-center justify-center">
-                  <Headphones size={16} className="text-[#1a3a5c]" />
+                <div className="w-9 h-9 bg-[#c9a227] flex items-center justify-center border border-[#e4c96a]/40">
+                  <Headphones size={16} className="text-[#0c1a2e]" />
                 </div>
                 <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#c9a227] mb-0.5">
+                    Listening
+                  </p>
                   <p className="text-white font-semibold text-sm">{section.title}</p>
-                  <p className="text-slate-400 text-xs">Listen carefully and answer the questions below</p>
+                  <p className="text-slate-400 text-xs mt-0.5">Listen once only. Answer as you listen.</p>
                 </div>
               </div>
-              <audio controls className="w-full h-10 rounded-lg audio-dark" src={section.audioUrl}>
+              <audio controls className="w-full h-10 audio-dark" src={section.audioUrl}>
                 <track kind="captions" />
               </audio>
             </div>
@@ -739,11 +831,11 @@ function SectionView({
   /* ── Writing ────────────────────────────────────────────────────────── */
   if (isWriting) {
     return (
-      <div className="h-full overflow-y-auto bg-[#f0f4f8]">
+      <div className="h-full overflow-y-auto bg-[#e8e4dc]">
         <div className="max-w-4xl mx-auto p-5 space-y-5">
-          <div className="flex items-center gap-2">
-            <div className="w-1 h-5 bg-[#1a3a5c] rounded-full" />
-            <h2 className="text-base font-bold text-[#1a3a5c]">{section.title}</h2>
+          <div className="border-b border-[#d4cfc4] pb-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#c9a227] mb-1">Writing</p>
+            <h2 className="text-lg font-bold text-[#0c1a2e] leading-snug">{section.title}</h2>
           </div>
           {Questions}
         </div>
@@ -754,15 +846,16 @@ function SectionView({
   /* ── Speaking ────────────────────────────────────────────────────────── */
   if (isSpeaking) {
     return (
-      <div className="h-full overflow-y-auto bg-[#f0f4f8]">
+      <div className="h-full overflow-y-auto bg-[#e8e4dc]">
         <div className="max-w-3xl mx-auto p-5 space-y-5">
-          <div className="bg-[#1a3a5c] rounded-2xl p-5 shadow-lg flex items-center gap-4">
-            <div className="w-10 h-10 bg-[#c8a84b] rounded-full flex items-center justify-center shrink-0">
-              <MessageSquare size={18} className="text-[#1a3a5c]" />
+          <div className="bg-[#0c1a2e] border border-[#c9a227]/35 p-4 sm:p-5 shadow-[0_8px_32px_rgba(0,0,0,0.25)] flex items-center gap-4">
+            <div className="w-10 h-10 bg-[#c9a227] flex items-center justify-center shrink-0 border border-[#e4c96a]/40">
+              <MessageSquare size={18} className="text-[#0c1a2e]" />
             </div>
             <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#c9a227] mb-0.5">Speaking</p>
               <p className="text-white font-bold text-sm">{section.title}</p>
-              <p className="text-slate-300 text-xs mt-0.5">Speak clearly into your microphone. Your response will be evaluated by AI.</p>
+              <p className="text-slate-300 text-xs mt-0.5">Speak clearly. Your response is recorded for review.</p>
             </div>
           </div>
           {Questions}
@@ -773,11 +866,10 @@ function SectionView({
 
   /* ── Default ─────────────────────────────────────────────────────────── */
   return (
-    <div className="h-full overflow-y-auto bg-[#f0f4f8]">
+    <div className="h-full overflow-y-auto bg-[#e8e4dc]">
       <div className="max-w-3xl mx-auto p-5 space-y-5">
-        <div className="flex items-center gap-2">
-          <div className="w-1 h-5 bg-[#1a3a5c] rounded-full" />
-          <h2 className="text-base font-bold text-[#1a3a5c]">{section.title}</h2>
+        <div className="border-b border-[#d4cfc4] pb-3">
+          <h2 className="text-lg font-bold text-[#0c1a2e] leading-snug">{section.title}</h2>
         </div>
         {Questions}
       </div>
@@ -813,39 +905,44 @@ function QuestionGroupView({
   mode: string;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      {/* Group header */}
-      <div className="bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+    <div className="bg-[#faf9f6] border border-[#d4cfc4] shadow-[0_1px_3px_rgba(12,26,46,0.06)] overflow-hidden">
+      <div className="bg-[#0c1a2e] text-white px-4 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#c9a227]">
             Questions {group.questionNumberStart}–{group.questionNumberEnd}
           </span>
           {group.title && (
-            <span className="text-xs text-slate-600 font-medium">· {group.title}</span>
+            <span className="text-xs text-slate-300 font-medium truncate">
+              · {group.title}
+            </span>
           )}
         </div>
-        <span className="text-[10px] text-slate-400 bg-slate-200 px-2 py-0.5 rounded-full uppercase font-semibold tracking-wide">
+        <span className="text-[9px] text-slate-400 uppercase font-semibold tracking-wider border border-white/15 px-2 py-0.5">
           {group.questionType.replace(/_/g, " ")}
         </span>
       </div>
 
-      <div className="p-5 space-y-4">
+      <div className="p-4 sm:p-5 space-y-4">
         {group.instructions && (
-          <div className="flex gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-            <div className="w-0.5 bg-amber-400 rounded-full shrink-0 self-stretch" />
-            <p className="text-sm text-amber-900 leading-relaxed">{group.instructions}</p>
+          <div className="border border-[#d4cfc4] bg-white px-4 py-3 text-sm text-slate-700 leading-relaxed">
+            <p className="text-[10px] font-bold text-[#0c1a2e] uppercase tracking-wide mb-1">
+              Task instructions
+            </p>
+            {group.instructions}
           </div>
         )}
 
         {/* Matching options legend */}
         {(group.questionType === "matching" || group.questionType === "matching_headings") &&
           group.matchingOptions && group.matchingOptions.length > 0 && (
-          <div className="bg-[#1a3a5c]/5 border border-[#1a3a5c]/20 rounded-xl p-4">
-            <p className="text-xs font-bold text-[#1a3a5c] uppercase tracking-wider mb-3">Match with the following options</p>
+          <div className="bg-[#faf9f6] border border-[#d4cfc4] border-l-[3px] border-l-[#c9a227] p-4">
+            <p className="text-[10px] font-bold text-[#0c1a2e] uppercase tracking-[0.15em] mb-3">
+              List of options
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {group.matchingOptions.map((opt, i) => (
                 <div key={i} className="flex items-start gap-2 text-sm text-slate-700">
-                  <span className="shrink-0 w-6 h-6 rounded-full bg-[#1a3a5c] text-white flex items-center justify-center text-xs font-bold">
+                  <span className="shrink-0 w-6 h-6 bg-[#0c1a2e] text-white flex items-center justify-center text-xs font-bold border border-[#c9a227]/30">
                     {String.fromCharCode(65 + i)}
                   </span>
                   <span className="leading-snug">{opt}</span>
@@ -916,10 +1013,21 @@ function QuestionView({
   const effectiveMatchingOptions = matchingOptions ?? question.matchingOptions ?? [];
 
   return (
-    <div className={`rounded-xl border transition-all ${isAnswered ? "border-emerald-200 bg-emerald-50/30" : "border-slate-100 bg-slate-50/50"}`}>
+    <div
+      className={`border transition-all ${
+        isAnswered
+          ? "border-emerald-400/60 bg-white shadow-[inset_3px_0_0_0_#10b981]"
+          : "border-[#d4cfc4] bg-white"
+      }`}
+    >
       <div className="flex items-start gap-3 p-4">
-        {/* Question number badge */}
-        <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shadow-sm ${isAnswered ? "bg-emerald-500 text-white" : "bg-white border-2 border-slate-200 text-slate-500"}`}>
+        <div
+          className={`shrink-0 w-8 h-8 flex items-center justify-center text-xs font-bold border ${
+            isAnswered
+              ? "bg-[#0c1a2e] text-[#c9a227] border-[#c9a227]/40"
+              : "bg-[#faf9f6] border-[#d4cfc4] text-slate-600"
+          }`}
+        >
           {question.questionNumber}
         </div>
 
@@ -943,8 +1051,8 @@ function QuestionView({
                   key={opt.label}
                   className={`flex items-start gap-3 px-3.5 py-3 rounded-xl border cursor-pointer transition-all text-sm ${
                     answer === opt.label
-                      ? "bg-[#1a3a5c] border-[#1a3a5c] text-white shadow-sm"
-                      : "bg-white border-slate-200 text-slate-700 hover:border-[#1a3a5c]/40 hover:bg-slate-50"
+                      ? "bg-[#0c1a2e] border-[#0c1a2e] text-white shadow-sm"
+                      : "bg-white border-slate-200 text-slate-700 hover:border-[#0c1a2e]/40 hover:bg-slate-50"
                   }`}
                 >
                   <input
@@ -953,10 +1061,10 @@ function QuestionView({
                     value={opt.label}
                     checked={answer === opt.label}
                     onChange={() => onAnswer(qId, opt.label, qType)}
-                    className="mt-0.5 accent-[#1a3a5c] shrink-0"
+                    className="mt-0.5 accent-[#0c1a2e] shrink-0"
                   />
                   <span>
-                    <strong className={answer === opt.label ? "text-[#c8a84b]" : "text-slate-500"}>{opt.label}.</strong>{" "}
+                    <strong className={answer === opt.label ? "text-[#c9a227]" : "text-slate-500"}>{opt.label}.</strong>{" "}
                     {opt.text}
                   </span>
                 </label>
@@ -973,8 +1081,8 @@ function QuestionView({
                   onClick={() => onAnswer(qId, opt, qType)}
                   className={`px-5 py-2 rounded-xl border text-xs font-bold tracking-wide transition-all ${
                     answer === opt
-                      ? "bg-[#1a3a5c] text-white border-[#1a3a5c] shadow-sm"
-                      : "bg-white border-slate-200 text-slate-600 hover:border-[#1a3a5c] hover:text-[#1a3a5c]"
+                      ? "bg-[#0c1a2e] text-white border-[#0c1a2e] shadow-sm"
+                      : "bg-white border-slate-200 text-slate-600 hover:border-[#0c1a2e] hover:text-[#0c1a2e]"
                   }`}
                 >
                   {opt}
@@ -991,7 +1099,7 @@ function QuestionView({
                 value={answer}
                 onChange={(e) => onAnswer(qId, e.target.value, qType)}
                 placeholder="Write your answer here…"
-                className={`border rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#1a3a5c] focus:border-[#1a3a5c] focus:outline-none transition-all w-full max-w-sm ${isAnswered ? "border-emerald-300 bg-white" : "border-slate-200 bg-white"}`}
+                className={`border rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#0c1a2e] focus:border-[#0c1a2e] focus:outline-none transition-all w-full max-w-sm ${isAnswered ? "border-emerald-300 bg-white" : "border-slate-200 bg-white"}`}
               />
               {isAnswered && <CheckCircle size={16} className="text-emerald-500 shrink-0" />}
             </div>
@@ -1004,7 +1112,7 @@ function QuestionView({
                 aria-label="Select match"
                 value={answer}
                 onChange={(e) => onAnswer(qId, e.target.value, qType)}
-                className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#1a3a5c] focus:border-[#1a3a5c] focus:outline-none bg-white appearance-none cursor-pointer min-w-[180px]"
+                className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#0c1a2e] focus:border-[#0c1a2e] focus:outline-none bg-white appearance-none cursor-pointer min-w-[180px]"
               >
                 <option value="">— Select answer —</option>
                 {effectiveMatchingOptions.map((opt, i) => (
@@ -1032,7 +1140,7 @@ function QuestionView({
                 onChange={(e) => onWritingChange(qId, e.target.value)}
                 onBlur={() => onWritingBlur(qId)}
                 placeholder="Begin writing your response here…"
-                className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 leading-relaxed focus:ring-2 focus:ring-[#1a3a5c] focus:border-[#1a3a5c] focus:outline-none resize-y transition-all"
+                className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 leading-relaxed focus:ring-2 focus:ring-[#0c1a2e] focus:border-[#0c1a2e] focus:outline-none resize-y transition-all"
               />
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1048,7 +1156,7 @@ function QuestionView({
                   </span>
                 </div>
                 {mode === "practice" && (
-                  <span className="text-xs text-[#1a3a5c] font-medium bg-[#1a3a5c]/8 px-2.5 py-1 rounded-full">
+                  <span className="text-xs text-[#0c1a2e] font-medium bg-[#0c1a2e]/8 px-2.5 py-1 rounded-full">
                     AI feedback after submission
                   </span>
                 )}
@@ -1060,8 +1168,10 @@ function QuestionView({
           {qType === "speaking" && (
             <div className="space-y-3">
               {question.speakingPrompt && (
-                <div className="bg-[#1a3a5c]/5 border border-[#1a3a5c]/15 rounded-xl p-4">
-                  <p className="text-xs font-bold text-[#1a3a5c] uppercase tracking-wide mb-1.5">Speaking Prompt</p>
+                <div className="bg-[#faf9f6] border border-[#d4cfc4] border-l-[3px] border-l-[#c9a227] p-4">
+                  <p className="text-[10px] font-bold text-[#0c1a2e] uppercase tracking-[0.15em] mb-1.5">
+                    Candidate cue card
+                  </p>
                   <p className="text-sm text-slate-700 leading-relaxed">{question.speakingPrompt}</p>
                   {question.speakingDuration && (
                     <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
@@ -1092,7 +1202,7 @@ function QuestionView({
                 <div>
                   <button
                     onClick={() => onStartRecording(qId)}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-[#1a3a5c] text-white rounded-xl text-sm font-bold hover:bg-[#0f2540] transition-colors shadow-sm"
+                    className="flex items-center gap-2 px-5 py-2.5 bg-[#0c1a2e] text-white rounded-xl text-sm font-bold hover:bg-[#050d16] transition-colors shadow-sm"
                   >
                     <Mic size={15} /> Start Recording
                   </button>
@@ -1116,14 +1226,21 @@ function QuestionView({
 
 export default function TakeExamPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center h-screen bg-[#f0f4f8]">
-        <div className="text-center">
-          <div className="w-16 h-16 rounded-full border-4 border-[#1a3a5c] border-t-transparent animate-spin mx-auto mb-4" />
-          <p className="text-[#1a3a5c] font-semibold text-sm tracking-wide uppercase">Loading Examination</p>
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-dvh bg-[#e8e4dc]">
+          <div className="text-center px-6">
+            <div className="w-14 h-14 rounded-full border-[3px] border-[#0c1a2e] border-t-transparent animate-spin mx-auto mb-5" />
+            <p className="text-[#0c1a2e] font-semibold text-xs tracking-[0.2em] uppercase">
+              Preparing your test
+            </p>
+            <p className="text-slate-500 text-sm mt-2 max-w-xs mx-auto leading-relaxed">
+              Please wait. Do not refresh this page.
+            </p>
+          </div>
         </div>
-      </div>
-    }>
+      }
+    >
       <TakeExamContent />
     </Suspense>
   );

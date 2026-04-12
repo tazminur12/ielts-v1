@@ -55,7 +55,12 @@ const QUESTION_TYPES = [
   { value: "short_answer",         label: "Short Answer" },
   { value: "essay",                label: "Essay / Writing Task" },
   { value: "speaking",             label: "Speaking" },
-];
+] as const;
+
+function questionTypeSupportedByAiModal(t: string | undefined): t is string {
+  if (!t) return false;
+  return QUESTION_TYPES.some((qt) => qt.value === t);
+}
 
 const INPUT    = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 const TEXTAREA = `${INPUT} resize-none`;
@@ -126,7 +131,12 @@ export default function AdminTestDetailPage() {
   const [addQuestionFor,  setAddQuestionFor]  = useState<{ sectionId: string; groupId: string } | null>(null);
   const [bulkUploadFor,   setBulkUploadFor]   = useState<string | null>(null);
   const [editSection,     setEditSection]     = useState<Section | null>(null);
-  const [aiGenerateFor,   setAiGenerateFor]   = useState<{ sectionId: string; groupId: string } | null>(null);
+  const [aiGenerateFor, setAiGenerateFor] = useState<{
+    sectionId: string;
+    groupId: string;
+    startQuestionNumber: number;
+    suggestedQuestionType?: string;
+  } | null>(null);
 
   /* ── fetch test + sections ───────────────────────── */
   const fetchTestAndSections = useCallback(async () => {
@@ -181,6 +191,72 @@ export default function AdminTestDetailPage() {
       },
     }));
   }, []);
+
+  /**
+   * Open AI question modal. Uses API (not client cache) so it works right after page load.
+   * @param sectionId — optional; defaults to first section (top-bar shortcut).
+   * @param preferredGroupId — optional; defaults to first group in that section.
+   */
+  const openAiGenerateModal = useCallback(
+    async (sectionId?: string, preferredGroupId?: string) => {
+      const section =
+        sectionId != null
+          ? sections.find((s) => s._id === sectionId)
+          : sections[0];
+      if (!section) {
+        await Swal.fire(
+          "Add a Section First",
+          "Please add a section before generating questions.",
+          "info"
+        );
+        return;
+      }
+      try {
+        const [grpRes, qRes] = await Promise.all([
+          fetch(`/api/admin/question-groups?sectionId=${section._id}`),
+          fetch(`/api/admin/questions?sectionId=${section._id}`),
+        ]);
+        const groups = await grpRes.json();
+        const questions = await qRes.json();
+        const groupList = Array.isArray(groups) ? groups : [];
+        if (groupList.length === 0) {
+          await Swal.fire(
+            "Add a Group First",
+            "Add a question group in this section (Add Group), then use Generate with AI.",
+            "info"
+          );
+          return;
+        }
+        const chosen =
+          preferredGroupId != null
+            ? groupList.find((g) => g._id === preferredGroupId)
+            : undefined;
+        const targetGroup = chosen ?? groupList[0];
+        const qList = Array.isArray(questions) ? questions : [];
+        const nums = qList
+          .map((q) => Number(q.questionNumber) || 0)
+          .filter((n) => n > 0);
+        const startQuestionNumber = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+        setAiGenerateFor({
+          sectionId: section._id,
+          groupId: targetGroup._id,
+          startQuestionNumber,
+          suggestedQuestionType: questionTypeSupportedByAiModal(
+            targetGroup.questionType
+          )
+            ? targetGroup.questionType
+            : undefined,
+        });
+      } catch {
+        await Swal.fire(
+          "Error",
+          "Could not load groups for this section. Refresh the page and try again.",
+          "error"
+        );
+      }
+    },
+    [sections]
+  );
 
   /* ── expand / collapse ──────────────────────────── */
   const toggleSection = (sectionId: string) => {
@@ -385,19 +461,8 @@ export default function AdminTestDetailPage() {
         </button>
 
         <button
-          onClick={() => {
-            const firstGroup = Object.values(sectionData).flatMap((sd) => sd.groups)[0];
-            const firstSection = sections[0];
-            if (!firstSection) {
-              Swal.fire("Add a Section First", "Please add a section before generating questions.", "info");
-              return;
-            }
-            if (!firstGroup) {
-              Swal.fire("Add a Group First", "Please add a question group in the section before generating questions.", "info");
-              return;
-            }
-            setAiGenerateFor({ sectionId: firstSection._id, groupId: firstGroup._id });
-          }}
+          type="button"
+          onClick={() => void openAiGenerateModal()}
           className="flex flex-col items-center gap-2 p-4 bg-white border-2 border-dashed border-amber-200 rounded-xl hover:border-amber-400 hover:bg-amber-50 transition-colors group"
         >
           <div className="w-10 h-10 bg-amber-100 group-hover:bg-amber-200 rounded-xl flex items-center justify-center transition-colors">
@@ -435,7 +500,7 @@ export default function AdminTestDetailPage() {
                 {[
                   { step: "1", icon: "📂", title: "Add Section", desc: 'Click "Add Section" above. Choose type: Listening, Reading, Writing or Speaking.' },
                   { step: "2", icon: "🗂️", title: "Add Question Group", desc: 'Expand the section → click "Add Group". Set question type and number range.' },
-                  { step: "3", icon: "📤", title: "Upload Questions", desc: 'Click "Bulk Upload" inside a section. Upload .xlsx, .docx, .pdf or .json file.' },
+                  { step: "3", icon: "📤", title: "Questions", desc: 'Use "Bulk Upload" (.xlsx, .docx, .pdf, .json), "Generate with AI" inside the section, or add questions one by one.' },
                   { step: "4", icon: "✅", title: "Publish", desc: 'Once questions are added, click "Publish" to make the test visible to students.' },
                 ].map(({ step, icon, title, desc }) => (
                   <div key={step} className="flex flex-col items-center text-center p-4 bg-gray-50 rounded-xl gap-2">
@@ -532,7 +597,14 @@ export default function AdminTestDetailPage() {
                           <p className="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
                             <Layers size={14}/> Question Groups ({sd.groups.length})
                           </p>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => void openAiGenerateModal(section._id)}
+                              className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-amber-50 text-amber-800 rounded-lg hover:bg-amber-100 border border-amber-200/80"
+                            >
+                              <Sparkles size={12} /> Generate with AI
+                            </button>
                             <button onClick={() => setBulkUploadFor(section._id)}
                               className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100">
                               <FileUp size={12}/> Bulk Upload
@@ -545,11 +617,18 @@ export default function AdminTestDetailPage() {
                         </div>
 
                         {sd.groups.length === 0 ? (
-                          <div className="border border-dashed border-gray-200 rounded-lg p-6 text-center text-gray-400 text-xs">
-                            No question groups yet.{" "}
-                            <button onClick={() => setAddGroupFor(section._id)} className="text-blue-500 hover:underline">
-                              Create one →
-                            </button>
+                          <div className="border border-dashed border-gray-200 rounded-lg p-6 text-center text-gray-400 text-xs space-y-2">
+                            <p>
+                              No question groups yet.{" "}
+                              <button onClick={() => setAddGroupFor(section._id)} className="text-blue-500 hover:underline">
+                                Create one →
+                              </button>
+                            </p>
+                            <p className="text-gray-500">
+                              After a group exists, use{" "}
+                              <span className="font-medium text-amber-700">Generate with AI</span>{" "}
+                              above to auto-create questions.
+                            </p>
                           </div>
                         ) : (
                           sd.groups.map((group) => {
@@ -569,7 +648,17 @@ export default function AdminTestDetailPage() {
                                       Q{group.questionNumberStart}–{group.questionNumberEnd}
                                     </span>
                                   </div>
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void openAiGenerateModal(section._id, group._id)
+                                      }
+                                      title="Generate questions with AI into this group"
+                                      className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-amber-50 text-amber-800 rounded-lg hover:bg-amber-100 border border-amber-200/80"
+                                    >
+                                      <Sparkles size={11} /> AI
+                                    </button>
                                     <button
                                       onClick={() => setAddQuestionFor({ sectionId: section._id, groupId: group._id })}
                                       className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100">
@@ -584,7 +673,18 @@ export default function AdminTestDetailPage() {
 
                                 {/* Questions */}
                                 {groupQs.length === 0 ? (
-                                  <p className="text-xs text-gray-400 text-center py-4">No questions in this group.</p>
+                                  <div className="text-center py-4 px-3 space-y-2">
+                                    <p className="text-xs text-gray-400">No questions in this group.</p>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        void openAiGenerateModal(section._id, group._id)
+                                      }
+                                      className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-medium"
+                                    >
+                                      <Sparkles size={12} /> Generate with AI
+                                    </button>
+                                  </div>
                                 ) : (
                                   <div className="divide-y divide-gray-50">
                                     {groupQs.map((q) => (
@@ -673,12 +773,17 @@ export default function AdminTestDetailPage() {
           }}
         />
       )}
-      {aiGenerateFor && (
+      {aiGenerateFor && test && (
         <AIGenerateModal
+          key={`${aiGenerateFor.sectionId}-${aiGenerateFor.groupId}`}
           testId={id}
-          sectionId={aiGenerateFor.sectionId}
-          groupId={aiGenerateFor.groupId}
+          sections={sections}
+          initialSectionId={aiGenerateFor.sectionId}
+          initialGroupId={aiGenerateFor.groupId}
+          initialStartQuestionNumber={aiGenerateFor.startQuestionNumber}
+          suggestedQuestionType={aiGenerateFor.suggestedQuestionType}
           testModule={test.module}
+          defaultTopic={test.title}
           onClose={() => setAiGenerateFor(null)}
           onSuccess={(sectionId) => {
             setAiGenerateFor(null);
@@ -1177,35 +1282,149 @@ function BulkUploadModal({ testId, sectionId, groups, onClose, onSuccess }: {
    AI GENERATE MODAL
 ═══════════════════════════════════════════════════════ */
 function AIGenerateModal({
-  testId, sectionId, groupId, testModule, onClose, onSuccess,
+  testId,
+  sections,
+  initialSectionId,
+  initialGroupId,
+  initialStartQuestionNumber,
+  suggestedQuestionType,
+  testModule,
+  defaultTopic,
+  onClose,
+  onSuccess,
 }: {
-  testId: string; sectionId: string; groupId: string; testModule: string;
-  onClose: () => void; onSuccess: (sectionId: string) => void;
+  testId: string;
+  sections: Section[];
+  initialSectionId: string;
+  initialGroupId: string;
+  initialStartQuestionNumber: number;
+  suggestedQuestionType?: string;
+  testModule: string;
+  defaultTopic?: string;
+  onClose: () => void;
+  onSuccess: (sectionId: string) => void;
 }) {
-  const [topic,        setTopic]        = useState("");
+  const [selectedSectionId, setSelectedSectionId] = useState(initialSectionId);
+  const [selectedGroupId, setSelectedGroupId] = useState(initialGroupId);
+  const [groups, setGroups] = useState<QuestionGroup[]>([]);
+  const [loadingPlacement, setLoadingPlacement] = useState(true);
+  const [nextQuestionStart, setNextQuestionStart] = useState(
+    initialStartQuestionNumber
+  );
+
+  const [topic, setTopic] = useState(defaultTopic ?? "");
   const [questionType, setQuestionType] = useState("multiple_choice");
-  const [count,        setCount]        = useState(5);
-  const [difficulty,   setDifficulty]   = useState("medium");
-  const [generating,   setGenerating]   = useState(false);
-  const [generated,    setGenerated]    = useState<Question[]>([]);
-  const [saving,       setSaving]       = useState(false);
+  const [count, setCount] = useState(5);
+  const [difficulty, setDifficulty] = useState("medium");
+  const [generating, setGenerating] = useState(false);
+  const [generated, setGenerated] = useState<Question[]>([]);
+  const [generateWarnings, setGenerateWarnings] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const refreshPlacement = useCallback(async (sid: string) => {
+    if (!sid) return;
+    setLoadingPlacement(true);
+    try {
+      const [grpRes, qRes] = await Promise.all([
+        fetch(`/api/admin/question-groups?sectionId=${sid}`),
+        fetch(`/api/admin/questions?sectionId=${sid}`),
+      ]);
+      const rawGroups = await grpRes.json();
+      const rawQs = await qRes.json();
+      const groupList = Array.isArray(rawGroups) ? rawGroups : [];
+      const qList = Array.isArray(rawQs) ? rawQs : [];
+      setGroups(groupList);
+      setSelectedGroupId((prev) => {
+        if (prev && groupList.some((g) => g._id === prev)) return prev;
+        return groupList[0]?._id ?? "";
+      });
+      const nums = qList
+        .map((q) => Number(q.questionNumber) || 0)
+        .filter((n) => n > 0);
+      setNextQuestionStart(nums.length > 0 ? Math.max(...nums) + 1 : 1);
+    } catch {
+      setGroups([]);
+      setSelectedGroupId("");
+      setNextQuestionStart(1);
+    } finally {
+      setLoadingPlacement(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedSectionId) void refreshPlacement(selectedSectionId);
+  }, [selectedSectionId, refreshPlacement]);
+
+  useEffect(() => {
+    setTopic(defaultTopic ?? "");
+  }, [defaultTopic]);
+
+  useEffect(() => {
+    setGenerated([]);
+    setGenerateWarnings([]);
+  }, [selectedSectionId, selectedGroupId]);
+
+  useEffect(() => {
+    const g = groups.find((x) => x._id === selectedGroupId);
+    if (g && questionTypeSupportedByAiModal(g.questionType)) {
+      setQuestionType(g.questionType);
+    } else if (
+      suggestedQuestionType &&
+      questionTypeSupportedByAiModal(suggestedQuestionType)
+    ) {
+      setQuestionType(suggestedQuestionType);
+    }
+  }, [selectedGroupId, groups, suggestedQuestionType]);
+
+  const selectedSection = sections.find((s) => s._id === selectedSectionId);
+  const selectedGroup = groups.find((g) => g._id === selectedGroupId);
+  const placementReady =
+    Boolean(selectedSectionId) &&
+    Boolean(selectedGroupId) &&
+    groups.length > 0 &&
+    !loadingPlacement;
 
   const handleGenerate = async () => {
     if (!topic.trim()) {
       Swal.fire("Topic Required", "Please enter a topic for AI to generate questions about.", "warning");
       return;
     }
+    if (!placementReady) {
+      Swal.fire(
+        "Choose section & group",
+        "Select a section that has at least one question group.",
+        "warning"
+      );
+      return;
+    }
     setGenerating(true);
     setGenerated([]);
+    setGenerateWarnings([]);
     try {
       const res = await fetch("/api/ai/generate-questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ module: testModule, questionType, topic, count, difficulty, testId, sectionId, groupId }),
+        body: JSON.stringify({
+          module: testModule,
+          questionType,
+          topic: topic.trim(),
+          count,
+          difficulty,
+          testId,
+          sectionId: selectedSectionId,
+          groupId: selectedGroupId,
+          startQuestionNumber: nextQuestionStart,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Generation failed");
+      if (!res.ok) {
+        throw new Error(
+          data.error || data.message || "Generation failed"
+        );
+      }
       setGenerated(data.questions || []);
+      const w = data.warnings;
+      setGenerateWarnings(Array.isArray(w) ? w : []);
     } catch (err: unknown) {
       Swal.fire("Error", err instanceof Error ? err.message : "Failed to generate questions", "error");
     } finally {
@@ -1223,9 +1442,11 @@ function AIGenerateModal({
         body: JSON.stringify({ questions: generated }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.message || "Save failed");
+      if (!res.ok) {
+        throw new Error(data.error || data.message || "Save failed");
+      }
       Swal.fire("Saved!", `${data.count ?? generated.length} questions saved successfully.`, "success");
-      onSuccess(sectionId);
+      onSuccess(selectedSectionId);
     } catch (err: unknown) {
       Swal.fire("Error", err instanceof Error ? err.message : "Failed to save questions", "error");
     } finally {
@@ -1233,11 +1454,105 @@ function AIGenerateModal({
     }
   };
 
+  const sortedSections = [...sections].sort((a, b) => a.order - b.order);
+
   return (
     <ModalWrapper title="✨ Generate Questions with AI" onClose={onClose} wide>
       <div className="p-6 space-y-5">
         {/* Form */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2 rounded-xl border border-amber-200 bg-amber-50/60 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <Layers size={18} className="text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  Where to add questions
+                </p>
+                <p className="text-xs text-gray-600 mt-0.5">
+                  Pick the section and question group below. Generated questions will be saved there.
+                </p>
+              </div>
+            </div>
+            {sections.length === 0 ? (
+              <p className="text-sm text-amber-900">
+                No sections on this test. Add a section first, then open this modal again.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Section">
+                  <select
+                    aria-label="Section for generated questions"
+                    value={selectedSectionId}
+                    onChange={(e) => setSelectedSectionId(e.target.value)}
+                    className={INPUT}
+                    disabled={sections.length === 0}
+                  >
+                    {sortedSections.map((s) => (
+                      <option key={s._id} value={s._id}>
+                        {s.order}. {s.title} ({s.sectionType.replace(/_/g, " ")})
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Question group">
+                  <select
+                    aria-label="Question group for generated questions"
+                    value={selectedGroupId}
+                    onChange={(e) => setSelectedGroupId(e.target.value)}
+                    className={INPUT}
+                    disabled={loadingPlacement || groups.length === 0}
+                  >
+                    {groups.length === 0 ? (
+                      <option value="">No groups in this section</option>
+                    ) : (
+                      groups.map((g) => (
+                        <option key={g._id} value={g._id}>
+                          {g.title?.trim() || `Group ${g.order}`} · Q
+                          {g.questionNumberStart}–{g.questionNumberEnd} ·{" "}
+                          {g.questionType.replace(/_/g, " ")}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </Field>
+              </div>
+            )}
+            {loadingPlacement ? (
+              <p className="text-xs text-gray-600 flex items-center gap-2">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                Loading groups for this section…
+              </p>
+            ) : (
+              <div className="rounded-lg bg-white/80 border border-amber-100 px-3 py-2 text-xs text-gray-700 space-y-1">
+                <p>
+                  <span className="font-medium text-gray-500">Target:</span>{" "}
+                  <span className="text-gray-900">
+                    {selectedSection
+                      ? `${selectedSection.order}. ${selectedSection.title}`
+                      : "—"}
+                  </span>
+                  {" → "}
+                  <span className="text-gray-900">
+                    {selectedGroup
+                      ? (selectedGroup.title?.trim() || `Group ${selectedGroup.order}`)
+                      : "—"}
+                  </span>
+                </p>
+                <p>
+                  <span className="font-medium text-gray-500">Next question # in section:</span>{" "}
+                  <span className="font-semibold tabular-nums text-amber-900">
+                    {nextQuestionStart}
+                  </span>
+                  {groups.length === 0 && selectedSectionId && (
+                    <span className="block mt-1 text-amber-800">
+                      Add a question group to this section (Add Group), then pick it here.
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="sm:col-span-2">
             <Field label="Topic / Passage *">
               <input
@@ -1246,8 +1561,16 @@ function AIGenerateModal({
                 onChange={(e) => setTopic(e.target.value)}
                 placeholder="e.g. Climate change effects on agriculture"
                 className={INPUT}
+                aria-label="Topic or passage for AI generation"
               />
             </Field>
+            <p className="text-xs text-gray-500 mt-1">
+              Question numbers will start at{" "}
+              <span className="font-semibold text-gray-700 tabular-nums">
+                {nextQuestionStart}
+              </span>{" "}
+              (after existing questions in this section).
+            </p>
           </div>
           <Field label="Question Type">
             <select aria-label="Question Type" value={questionType} onChange={(e) => setQuestionType(e.target.value)} className={INPUT}>
@@ -1282,7 +1605,7 @@ function AIGenerateModal({
         <button
           type="button"
           onClick={handleGenerate}
-          disabled={generating}
+          disabled={generating || !placementReady}
           className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold text-sm inline-flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
         >
           <Sparkles size={16}/>
@@ -1299,6 +1622,16 @@ function AIGenerateModal({
 
         {!generating && generated.length > 0 && (
           <div className="space-y-3">
+            {generateWarnings.length > 0 && (
+              <div className="rounded-lg bg-amber-100 border border-amber-200/80 px-3 py-2.5 text-xs text-amber-950">
+                <p className="font-semibold mb-1">Review before saving</p>
+                <ul className="list-disc pl-4 space-y-0.5 text-amber-900/95">
+                  {generateWarnings.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-gray-800">
                 Preview — {generated.length} question{generated.length !== 1 ? "s" : ""} generated

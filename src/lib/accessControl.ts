@@ -2,6 +2,10 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import dbConnect from "@/lib/mongodb";
 import Subscription from "@/models/Subscription";
+import {
+  repairStripePaidTrialsStillMarkedTrial,
+  syncExpiredSubscriptions,
+} from "@/lib/subscriptionSync";
 
 export interface UserAccess {
   hasAccess: boolean;
@@ -35,6 +39,8 @@ export async function checkUserAccess(
 
   try {
     await dbConnect();
+    await repairStripePaidTrialsStillMarkedTrial();
+    await syncExpiredSubscriptions();
 
     // Find active subscription
     const subscription = await Subscription.findOne({

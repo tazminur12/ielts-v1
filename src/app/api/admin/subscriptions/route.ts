@@ -3,6 +3,10 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import dbConnect from "@/lib/mongodb";
 import Subscription from "@/models/Subscription";
+import {
+  repairStripePaidTrialsStillMarkedTrial,
+  syncExpiredSubscriptions,
+} from "@/lib/subscriptionSync";
 
 // GET all subscriptions (Admin only)
 export async function GET() {
@@ -25,6 +29,8 @@ export async function GET() {
     }
 
     await dbConnect();
+    await repairStripePaidTrialsStillMarkedTrial();
+    await syncExpiredSubscriptions();
 
     const subscriptions = await Subscription.find()
       .populate("userId", "name email")
