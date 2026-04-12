@@ -33,8 +33,9 @@ export default function Sidebar() {
 
   const studentLinks = [
   
-    { name: "Mock Tests", href: "/exam", icon: FileText },
-    { name: "Progress", href: "/dashboard/progress", icon: BarChart },
+    { name: "Mock Tests Library", href: "/start-mock", icon: FileText },
+    { name: "My Progress", href: "/dashboard/progress", icon: BarChart },
+    { name: "Subscription", href: "/pricing", icon: DollarSign },
   ];
 
   const staffAdminLinks = [

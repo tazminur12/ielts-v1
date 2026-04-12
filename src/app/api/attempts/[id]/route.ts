@@ -101,7 +101,7 @@ export async function PATCH(
         }
 
         const attemptModule = attempt.module as "listening" | "reading";
-        const bandScore = rawScoreToBand(rawScore, attemptModule);
+        const bandScore = rawScoreToBand(rawScore, attemptModule, questions.length);
         const percentageScore = Math.round((rawScore / questions.length) * 100);
 
         await attempt.updateOne({

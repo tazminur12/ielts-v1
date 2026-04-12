@@ -1,47 +1,58 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Clock, PlayCircle, BarChart, CheckCircle2 } from "lucide-react";
+import { Clock, PlayCircle, BarChart, CheckCircle2, Lock } from "lucide-react";
+
+interface Test {
+  _id: string;
+  title: string;
+  duration: number;
+  totalQuestions: number;
+  difficulty: string;
+  module: string;
+  examType: string;
+  tags?: string[];
+  accessLevel: string;
+}
 
 export default function StartMockPage() {
-  const mockTests = [
-    {
-      id: 1,
-      title: "Academic Reading Test 1",
-      duration: "60 mins",
-      questions: 40,
-      difficulty: "Medium",
-      type: "Academic",
-      tags: ["Reading", "Full Test"]
-    },
-    {
-      id: 2,
-      title: "General Training Listening 1",
-      duration: "30 mins",
-      questions: 40,
-      difficulty: "Easy",
-      type: "General",
-      tags: ["Listening", "Audio Included"]
-    },
-    {
-      id: 3,
-      title: "Academic Writing Task 1",
-      duration: "20 mins",
-      questions: 1,
-      difficulty: "Hard",
-      type: "Academic",
-      tags: ["Writing", "Graph Analysis"]
-    },
-    {
-      id: 4,
-      title: "Speaking Part 1 & 2",
-      duration: "15 mins",
-      questions: 5,
-      difficulty: "Medium",
-      type: "Both",
-      tags: ["Speaking", "Recorder"]
+  const [tests, setTests] = useState<Test[]>([]);
+  const [accessibleSlugs, setAccessibleSlugs] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState("All Tests");
+
+  useEffect(() => {
+    fetchTests();
+  }, []);
+
+  const fetchTests = async () => {
+    try {
+      // You can change examType to 'practice' if start-mock should show practice tests
+      const params = new URLSearchParams({ examType: "mock", limit: "50" });
+      const res = await fetch(`/api/tests?${params}`);
+      const data = await res.json();
+      setTests(data.tests || []);
+      setAccessibleSlugs(data.accessibleSlugs || []);
+    } catch (err) {
+      console.error("Failed to load tests", err);
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  const filteredTests = tests.filter(test => {
+    // Search filter
+    if (search && !test.title.toLowerCase().includes(search.toLowerCase())) return false;
+    
+    // Category/Module filter
+    if (activeFilter !== "All Tests") {
+      if (test.module.toLowerCase() !== activeFilter.toLowerCase()) return false;
+    }
+    
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pt-24 pb-16">
@@ -63,8 +74,9 @@ export default function StartMockPage() {
             {["All Tests", "Reading", "Listening", "Writing", "Speaking"].map((filter, i) => (
               <button
                 key={i}
+                onClick={() => setActiveFilter(filter)}
                 className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all whitespace-nowrap ${
-                  i === 0
+                  activeFilter === filter
                     ? "bg-slate-900 text-white shadow-lg shadow-slate-900/20"
                     : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
                 }`}
@@ -78,6 +90,8 @@ export default function StartMockPage() {
              <input
                type="text"
                placeholder="Search tests..."
+               value={search}
+               onChange={(e) => setSearch(e.target.value)}
                className="w-full pl-4 pr-10 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm outline-none transition-shadow"
              />
              <div className="absolute right-3 top-2.5 text-slate-400">
@@ -89,65 +103,92 @@ export default function StartMockPage() {
         </div>
 
         {/* Test Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-          {mockTests.map((test) => (
-            <div key={test.id} className="group bg-white rounded-2xl shadow-sm hover:shadow-xl border border-slate-100 transition-all duration-300 hover:-translate-y-1 overflow-hidden flex flex-col">
-              <div className="p-6 flex-1">
-                <div className="flex justify-between items-start mb-4">
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                    test.type === 'Academic' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
-                    test.type === 'General' ? 'bg-green-50 text-green-700 border border-green-100' :
-                    'bg-blue-50 text-blue-700 border border-blue-100'
-                  }`}>
-                    {test.type}
-                  </span>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border ${
-                    test.difficulty === 'Easy' ? 'text-green-600 bg-green-50/50 border-green-100' :
-                    test.difficulty === 'Medium' ? 'text-yellow-600 bg-yellow-50/50 border-yellow-100' :
-                    'text-red-600 bg-red-50/50 border-red-100'
-                  }`}>
-                    {test.difficulty}
-                  </span>
-                </div>
-                
-                <h3 className="text-xl font-bold text-slate-900 mb-3 group-hover:text-blue-600 transition-colors line-clamp-2">
-                  {test.title}
-                </h3>
-                
-                <div className="flex items-center gap-4 text-sm text-slate-500 mb-5">
-                  <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded text-xs font-medium">
-                    <Clock size={14} />
-                    {test.duration}
-                  </div>
-                  <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded text-xs font-medium">
-                    <BarChart size={14} />
-                    {test.questions} Qs
-                  </div>
-                </div>
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="animate-pulse bg-white rounded-2xl h-64 border border-slate-100"></div>
+            ))}
+          </div>
+        ) : filteredTests.length === 0 ? (
+          <div className="text-center py-20">
+            <h3 className="text-xl font-bold text-slate-700">No mock tests found</h3>
+            <p className="text-slate-500 mt-2">Try adjusting your filters or checking back later.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+            {filteredTests.map((test) => {
+              const isLocked = test.accessLevel !== "free" && !accessibleSlugs.includes(test.accessLevel);
+              const testUrl = isLocked ? "/pricing" : `/exam?testId=${test._id}`;
+              
+              return (
+                <div key={test._id} className="group bg-white rounded-2xl shadow-sm hover:shadow-xl border border-slate-100 transition-all duration-300 hover:-translate-y-1 overflow-hidden flex flex-col">
+                  <div className="p-6 flex-1">
+                    <div className="flex justify-between items-start mb-4">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        test.examType === 'academic' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
+                        test.examType === 'general' ? 'bg-green-50 text-green-700 border border-green-100' :
+                        'bg-blue-50 text-blue-700 border border-blue-100'
+                      }`}>
+                        {test.examType || test.module}
+                      </span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border ${
+                        test.difficulty === 'easy' ? 'text-green-600 bg-green-50/50 border-green-100' :
+                        test.difficulty === 'medium' ? 'text-yellow-600 bg-yellow-50/50 border-yellow-100' :
+                        'text-red-600 bg-red-50/50 border-red-100'
+                      }`}>
+                        {test.difficulty || "medium"}
+                      </span>
+                    </div>
+                    
+                    <h3 className="text-xl font-bold text-slate-900 mb-3 group-hover:text-blue-600 transition-colors line-clamp-2">
+                      {test.title}
+                    </h3>
+                    
+                    <div className="flex items-center gap-4 text-sm text-slate-500 mb-5">
+                      <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded text-xs font-medium">
+                        <Clock size={14} />
+                        {test.duration ? `${test.duration} mins` : "Untimed"}
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded text-xs font-medium">
+                        <BarChart size={14} />
+                        {test.totalQuestions || 0} Qs
+                      </div>
+                    </div>
 
-                <div className="flex flex-wrap gap-2">
-                  {test.tags.map((tag, index) => (
-                    <span key={index} className="text-xs font-medium text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1 rounded-md">
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(test.tags || []).map((tag, index) => (
+                        <span key={index} className="text-xs font-medium text-slate-500 bg-slate-50 border border-slate-100 px-2 py-1 rounded-md">
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
 
-              <div className="p-4 border-t border-slate-100 bg-slate-50/50">
-                <Link
-                  href="/exam" 
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-blue-600 hover:bg-blue-600 hover:text-white text-slate-700 font-bold rounded-xl transition-all shadow-sm"
-                >
-                  Start Test <PlayCircle size={16} />
-                </Link>
-              </div>
-            </div>
-          ))}
-        </div>
+                  <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                    {isLocked ? (
+                      <Link
+                        href="/pricing" 
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold rounded-xl transition-all shadow-sm"
+                      >
+                        Unlock to Play <Lock size={16} className="text-slate-400" />
+                      </Link>
+                    ) : (
+                      <Link
+                        href={testUrl} 
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-blue-600 hover:bg-blue-600 hover:text-white text-slate-700 font-bold rounded-xl transition-all shadow-sm"
+                      >
+                        Start Test <PlayCircle size={16} />
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Info Section - Modern Cards */}
-        <div className="bg-white rounded-[2rem] p-8 md:p-12 border border-slate-200 shadow-sm text-center">
+        <div className="bg-white rounded-4xl p-8 md:p-12 border border-slate-200 shadow-sm text-center">
           <div className="max-w-2xl mx-auto mb-10">
             <h2 className="text-2xl md:text-3xl font-bold text-slate-900 mb-4">Why Take Our Mock Tests?</h2>
             <p className="text-slate-600">

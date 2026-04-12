@@ -156,39 +156,45 @@ Evaluate and return ONLY a JSON object with this exact structure:
  * Convert IELTS raw score (0-40) to band score
  * Based on official IELTS conversion tables
  */
-export function rawScoreToBand(rawScore: number, module: "listening" | "reading"): number {
+export function rawScoreToBand(rawScore: number, module: "listening" | "reading", totalQuestions: number = 40): number {
+  // Scale the score to 40 so that short practice tests can still receive an accurate proportional band score.
+  let scaledScore = rawScore;
+  if (totalQuestions > 0 && totalQuestions !== 40) {
+    scaledScore = Math.round((rawScore / totalQuestions) * 40);
+  }
+
   if (module === "listening") {
-    if (rawScore >= 39) return 9;
-    if (rawScore >= 37) return 8.5;
-    if (rawScore >= 35) return 8;
-    if (rawScore >= 32) return 7.5;
-    if (rawScore >= 30) return 7;
-    if (rawScore >= 26) return 6.5;
-    if (rawScore >= 23) return 6;
-    if (rawScore >= 18) return 5.5;
-    if (rawScore >= 16) return 5;
-    if (rawScore >= 13) return 4.5;
-    if (rawScore >= 10) return 4;
-    if (rawScore >= 8)  return 3.5;
-    if (rawScore >= 6)  return 3;
-    if (rawScore >= 4)  return 2.5;
+    if (scaledScore >= 39) return 9;
+    if (scaledScore >= 37) return 8.5;
+    if (scaledScore >= 35) return 8;
+    if (scaledScore >= 32) return 7.5;
+    if (scaledScore >= 30) return 7;
+    if (scaledScore >= 26) return 6.5;
+    if (scaledScore >= 23) return 6;
+    if (scaledScore >= 18) return 5.5;
+    if (scaledScore >= 16) return 5;
+    if (scaledScore >= 13) return 4.5;
+    if (scaledScore >= 10) return 4;
+    if (scaledScore >= 8)  return 3.5;
+    if (scaledScore >= 6)  return 3;
+    if (scaledScore >= 4)  return 2.5;
     return 2;
   } else {
     // Reading (Academic)
-    if (rawScore >= 39) return 9;
-    if (rawScore >= 37) return 8.5;
-    if (rawScore >= 35) return 8;
-    if (rawScore >= 33) return 7.5;
-    if (rawScore >= 30) return 7;
-    if (rawScore >= 27) return 6.5;
-    if (rawScore >= 23) return 6;
-    if (rawScore >= 19) return 5.5;
-    if (rawScore >= 15) return 5;
-    if (rawScore >= 13) return 4.5;
-    if (rawScore >= 10) return 4;
-    if (rawScore >= 8)  return 3.5;
-    if (rawScore >= 6)  return 3;
-    if (rawScore >= 4)  return 2.5;
+    if (scaledScore >= 39) return 9;
+    if (scaledScore >= 37) return 8.5;
+    if (scaledScore >= 35) return 8;
+    if (scaledScore >= 33) return 7.5;
+    if (scaledScore >= 30) return 7;
+    if (scaledScore >= 27) return 6.5;
+    if (scaledScore >= 23) return 6;
+    if (scaledScore >= 19) return 5.5;
+    if (scaledScore >= 15) return 5;
+    if (scaledScore >= 13) return 4.5;
+    if (scaledScore >= 10) return 4;
+    if (scaledScore >= 8)  return 3.5;
+    if (scaledScore >= 6)  return 3;
+    if (scaledScore >= 4)  return 2.5;
     return 2;
   }
 }
