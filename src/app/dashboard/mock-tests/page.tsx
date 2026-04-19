@@ -1,232 +1,196 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import {
-  Clock, BookOpen, Star, Lock, Play, ChevronRight, Trophy,
-} from "lucide-react";
+  Trophy,
+  Clock,
+  HelpCircle,
+  ArrowRight,
+  Lock,
+  CheckCircle,
+  Loader2,
+} from 'lucide-react';
 
 interface Test {
   _id: string;
   title: string;
-  description?: string;
   module: string;
-  accessLevel: string;
-  duration: number;
   totalQuestions: number;
-  difficulty?: string;
-  targetBand?: number;
-  tags?: string[];
+  duration: number;
+  difficulty: string;
+  accessLevel: string; // 'free' or a plan slug
+  status: string;
 }
 
-const MODULE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  listening: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
-  reading: { bg: "bg-green-50", text: "text-green-700", border: "border-green-200" },
-  writing: { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200" },
-  speaking: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" },
-  full: { bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-200" },
-};
-
-const MODULE_EMOJI: Record<string, string> = {
-  listening: "🎧",
-  reading: "📖",
-  writing: "✍️",
-  speaking: "🎤",
-  full: "📋",
-};
-
 export default function MockTestsPage() {
+  const { data: session } = useSession();
   const [tests, setTests] = useState<Test[]>([]);
-  const [accessibleSlugs, setAccessibleSlugs] = useState<string[]>([]);
+  const [activeSubscription, setActiveSubscription] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeModule, setActiveModule] = useState("all");
-  const [pagination, setPagination] = useState({ total: 0, pages: 1, page: 1 });
-
-  const fetchTests = async (page = 1) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        examType: "mock",
-        page: String(page),
-        limit: "12",
-      });
-      if (activeModule !== "all") params.set("module", activeModule);
-
-      const res = await fetch(`/api/tests?${params}`);
-      const data = await res.json();
-      setTests(data.tests || []);
-      setAccessibleSlugs(data.accessibleSlugs || []);
-      setPagination(data.pagination || { total: 0, pages: 1, page: 1 });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    fetchTests();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeModule]);
+    const fetchData = async () => {
+      try {
+        // 1. Fetch Published Mock Tests
+        const resTests = await fetch(
+          '/api/admin/tests?examType=mock&status=published',
+        );
+        const dataTests = await resTests.json();
 
-  const modules = ["all", "listening", "reading", "writing", "speaking", "full"];
+        // 2. Fetch User Subscription
+        let subData = null;
+        if (session?.user) {
+          const resSub = await fetch('/api/subscriptions');
+          const dataSub = await resSub.json();
+          subData = dataSub.data;
+          setActiveSubscription(subData);
+        }
+
+        if (dataTests.tests) {
+          setTests(dataTests.tests);
+        }
+      } catch (err) {
+        console.error('Error loading tests:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [session]);
+
+  // Helper to check if user can access the test
+  const hasAccess = (test: Test) => {
+    if (test.accessLevel === 'free') return true;
+    if (!activeSubscription) return false;
+    // Check if the subscription plan slug matches the test's required access level
+    return activeSubscription.planId?.slug === test.accessLevel;
+  };
+
+  if (loading) {
+    return (
+      <div className="h-96 flex items-center justify-center">
+        <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Mock Tests</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Full-length IELTS mock exams with timed conditions and band scoring
-        </p>
+    <div className="p-6 space-y-8">
+      {/* Hero Banner */}
+      <div className="relative bg-gradient-to-r from-slate-900 to-blue-900 rounded-3xl p-8 text-white overflow-hidden shadow-2xl">
+        <div className="relative z-10 max-w-xl">
+          <h1 className="text-3xl font-black mb-3">Ready for the Real Test?</h1>
+          <p className="text-blue-100 text-sm mb-6 leading-relaxed">
+            Our mock tests are designed based on the latest IELTS patterns. Get
+            instant AI grading and a predictive band score in minutes.
+          </p>
+          <div className="flex gap-4">
+            <button
+              onClick={() => {
+                const firstFree = tests.find(t => t.accessLevel === 'free');
+                if (firstFree)
+                  window.location.href = `/dashboard/exam/${firstFree._id}`;
+              }}
+              className="bg-blue-500 hover:bg-blue-400 px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2"
+            >
+              Start Free Mock <ArrowRight size={18} />
+            </button>
+          </div>
+        </div>
+        <div className="absolute right-[-20px] bottom-[-20px] opacity-10">
+          <Trophy size={200} />
+        </div>
       </div>
 
-      {/* Module Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {modules.map((m) => (
-          <button
-            key={m}
-            onClick={() => setActiveModule(m)}
-            className={`shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors capitalize ${
-              activeModule === m
-                ? "bg-blue-600 text-white"
-                : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            {m === "all" ? "All Modules" : `${MODULE_EMOJI[m]} ${m}`}
-          </button>
-        ))}
-      </div>
+      <h2 className="text-xl font-bold text-slate-800">
+        Available Full-Length & Module Exams
+      </h2>
 
-      {/* Tests Grid */}
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="bg-white rounded-xl h-48 animate-pulse border border-gray-100" />
-          ))}
-        </div>
-      ) : tests.length === 0 ? (
-        <div className="bg-white rounded-xl border border-dashed border-gray-200 p-16 text-center">
-          <BookOpen size={40} className="mx-auto mb-3 text-gray-300" />
-          <p className="text-gray-500 font-medium">No mock tests available yet</p>
-          <p className="text-gray-400 text-sm mt-1">Check back soon for new tests</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {tests.map((test) => {
-            const colors = MODULE_COLORS[test.module] || MODULE_COLORS.full;
-            const isLocked = !accessibleSlugs.includes(test.accessLevel);
+      {/* Mock Test List */}
+      <div className="grid grid-cols-1 gap-4">
+        {tests.length === 0 ? (
+          <div className="p-10 text-center bg-white rounded-2xl border border-dashed border-slate-300 text-slate-500">
+            No mock tests available at the moment.
+          </div>
+        ) : (
+          tests.map(test => {
+            const canAccess = hasAccess(test);
 
             return (
               <div
                 key={test._id}
-                className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow"
+                className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col md:flex-row items-center justify-between hover:border-blue-300 transition-all gap-6"
               >
-                {/* Card Header */}
-                <div className={`${colors.bg} px-5 pt-5 pb-4`}>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className={`text-xs font-semibold uppercase tracking-wide ${colors.text}`}>
-                        {MODULE_EMOJI[test.module]} {test.module} {test.module !== "full" ? "module" : "mock"}
+                <div className="flex items-center gap-5">
+                  <div
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${
+                      canAccess
+                        ? 'bg-green-100 text-green-600'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {canAccess ? <Trophy size={28} /> : <Lock size={28} />}
+                  </div>
+
+                  <div>
+                    <h3 className="font-bold text-lg text-slate-900">
+                      {test.title}
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-4 mt-2 text-sm text-slate-500 font-medium">
+                      <span className="flex items-center gap-1.5 capitalize">
+                        <CheckCircle size={16} className="text-blue-500" />
+                        {test.module}
                       </span>
-                      <h3 className="text-base font-bold text-gray-900 mt-1 line-clamp-2">
-                        {test.title}
-                      </h3>
+                      <span className="flex items-center gap-1.5">
+                        <HelpCircle size={16} className="text-blue-500" />
+                        {test.totalQuestions} Questions
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Clock size={16} className="text-blue-500" />
+                        {test.duration} min
+                      </span>
+                      <span className="flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded text-xs uppercase">
+                        {test.difficulty}
+                      </span>
                     </div>
-                    {isLocked && (
-                      <span className="shrink-0 ml-2 p-1.5 bg-white/70 rounded-lg">
-                        <Lock size={14} className="text-gray-500" />
-                      </span>
-                    )}
                   </div>
                 </div>
 
-                {/* Card Body */}
-                <div className="p-5">
-                  {test.description && (
-                    <p className="text-sm text-gray-500 line-clamp-2 mb-3">{test.description}</p>
+                <div className="w-full md:w-auto flex items-center gap-3">
+                  {!canAccess && (
+                    <Link
+                      href="/dashboard/pricing"
+                      className="flex-1 md:flex-none"
+                    >
+                      <button className="w-full px-6 py-2.5 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50">
+                        Unlock Premium
+                      </button>
+                    </Link>
                   )}
-                  <div className="flex flex-wrap gap-3 text-xs text-gray-500 mb-4">
-                    <span className="flex items-center gap-1">
-                      <Clock size={12} />
-                      {test.duration ? `${test.duration} min` : "No timer"}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <BookOpen size={12} />
-                      {test.totalQuestions} questions
-                    </span>
-                    {test.targetBand && (
-                      <span className="flex items-center gap-1">
-                        <Trophy size={12} />
-                        Band {test.targetBand}
-                      </span>
-                    )}
-                    {test.difficulty && (
-                      <span className={`capitalize px-2 py-0.5 rounded-full font-medium ${
-                        test.difficulty === "easy" ? "bg-green-50 text-green-600"
-                        : test.difficulty === "medium" ? "bg-yellow-50 text-yellow-600"
-                        : "bg-red-50 text-red-600"
-                      }`}>
-                        {test.difficulty}
-                      </span>
-                    )}
-                  </div>
 
-                  {isLocked ? (
-                    <Link
-                      href="/pricing"
-                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-200 text-gray-500 text-sm font-medium hover:bg-gray-50 transition-colors"
+                  <Link
+                    href={canAccess ? `/dashboard/exam/${test._id}` : '#'}
+                    className="flex-1 md:flex-none"
+                  >
+                    <button
+                      disabled={!canAccess}
+                      className={`w-full px-8 py-2.5 rounded-xl font-bold text-sm transition-all ${
+                        canAccess
+                          ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-100'
+                          : 'bg-slate-900 text-white opacity-50 cursor-not-allowed'
+                      }`}
                     >
-                      <Lock size={14} />
-                      Upgrade to Access
-                    </Link>
-                  ) : (
-                    <Link
-                      href={`/exam?testId=${test._id}`}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
-                    >
-                      <Play size={14} />
-                      Start Mock Test
-                    </Link>
-                  )}
+                      {canAccess ? 'Start Exam' : 'Locked'}
+                    </button>
+                  </Link>
                 </div>
               </div>
             );
-          })}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {pagination.pages > 1 && (
-        <div className="flex justify-center gap-2">
-          {Array.from({ length: pagination.pages }, (_, i) => i + 1).map((p) => (
-            <button
-              key={p}
-              onClick={() => fetchTests(p)}
-              className={`w-9 h-9 text-sm rounded-lg font-medium ${
-                p === pagination.page
-                  ? "bg-blue-600 text-white"
-                  : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Info Banner */}
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 flex gap-4">
-        <Star className="text-blue-500 shrink-0 mt-0.5" size={20} />
-        <div>
-          <p className="text-sm font-semibold text-blue-900">How Mock Tests Work</p>
-          <p className="text-sm text-blue-700 mt-1">
-            Mock tests simulate real IELTS exam conditions. Timer starts when you begin.
-            After submission, you receive an instant band score with detailed feedback.
-            Writing and Speaking tasks are evaluated by AI.
-          </p>
-          <Link href="/about" className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 mt-2 hover:underline">
-            Learn more <ChevronRight size={14} />
-          </Link>
-        </div>
+          })
+        )}
       </div>
     </div>
   );
