@@ -1,87 +1,136 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronRight,
+  FileText,
+  Gavel,
+  Link2,
+  Lock,
+  Mail,
+  RefreshCw,
+  Scale,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 
 export default function TermsPage() {
+  const lastUpdated = new Date().toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
   return (
-    <div className="min-h-screen bg-[#f8fafc] font-sans pb-20 mt-16 sm:mt-20">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 pt-12 pb-8 px-4 sm:px-6">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-3 tracking-tight">
-            Terms of Service
-          </h1>
-          <p className="text-slate-600 text-base">
-            Last updated: {new Date().toLocaleDateString()}
-          </p>
-        </div>
+    <div className="min-h-screen bg-[#F8FAFC] relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-32 -right-24 h-[420px] w-[420px] rounded-full bg-blue-200/35 blur-[110px]" />
+        <div className="absolute -bottom-36 -left-24 h-[420px] w-[420px] rounded-full bg-indigo-200/30 blur-[110px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.04)_1px,transparent_0)] bg-size-[22px_22px]" />
       </div>
 
-      {/* Content */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="bg-white rounded-xl border border-slate-200 p-8 shadow-sm prose prose-sm max-w-none">
-          <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">1. Acceptance of Terms</h2>
-          <p className="text-slate-700 leading-relaxed">
-            By accessing and using IELTS Practice Pro website and services, you accept and agree to be bound by the terms and provision of this agreement. If you do not agree to abide by the above, please do not use this service.
+      <div className="relative mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 pt-28 pb-16 lg:pt-32">
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-linear-to-br from-blue-600 to-indigo-600 text-white">
+              <Sparkles className="h-4 w-4" />
+            </span>
+            <span className="text-xs font-extrabold uppercase tracking-widest text-slate-700">Legal</span>
+          </div>
+          <h1 className="mt-5 text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+            Terms of Service
+          </h1>
+          <p className="mt-2 text-sm sm:text-base text-slate-600 font-medium max-w-2xl mx-auto">
+            These terms govern your access to and use of IELTS Practice Pro. By using the site, you agree to these terms.
           </p>
+        </div>
 
-          <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">2. Use License</h2>
-          <p className="text-slate-700 leading-relaxed">
-            Permission is granted to temporarily download one copy of the materials (information or software) on IELTS Practice Pro for personal, non-commercial transitory viewing only. This is the grant of a license, not a transfer of title, and under this license you may not:
-          </p>
-          <ul className="list-disc list-inside text-slate-700 space-y-2 ml-4 mt-4">
-            <li>Modify or copy the materials</li>
-            <li>Use the materials for any commercial purpose or for any public display</li>
-            <li>Attempt to decompile or reverse engineer any software contained on the site</li>
-            <li>Remove any copyright or other proprietary notations from the materials</li>
-            <li>Transfer the materials to another person or &ldquo;mirror&rdquo; the materials on any other server</li>
-          </ul>
-
-          <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">3. Disclaimer</h2>
-          <p className="text-slate-700 leading-relaxed">
-            The materials on IELTS Practice Pro are provided on an &ldquo;as is&rdquo; basis. IELTS Practice Pro makes no warranties, expressed or implied, and hereby disclaims and negates all other warranties including, without limitation, implied warranties or conditions of merchantability, fitness for a particular purpose, or non-infringement of intellectual property or other violation of rights.
-          </p>
-
-          <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">4. Limitations</h2>
-          <p className="text-slate-700 leading-relaxed">
-            In no event shall IELTS Practice Pro or its suppliers be liable for any damages (including, without limitation, damages for loss of data or profit, or due to business interruption) arising out of the use or inability to use the materials on IELTS Practice Pro.
-          </p>
-
-          <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">5. Accuracy of Materials</h2>
-          <p className="text-slate-700 leading-relaxed">
-            The materials appearing on IELTS Practice Pro could include technical, typographical, or photographic errors. IELTS Practice Pro does not warrant that any of the materials on the website are accurate, complete, or current. IELTS Practice Pro may make changes to the materials contained on the website at any time without notice.
-          </p>
-
-          <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">6. Links</h2>
-          <p className="text-slate-700 leading-relaxed">
-            IELTS Practice Pro has not reviewed all of the sites linked to its website and is not responsible for the contents of any such linked site. The inclusion of any link does not imply endorsement by IELTS Practice Pro of the site. Use of any such linked website is at the user&rsquo;s own risk.
-          </p>
-
-          <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">7. Modifications</h2>
-          <p className="text-slate-700 leading-relaxed">
-            IELTS Practice Pro may revise these terms of service for the website at any time without notice. By using this website, you are agreeing to be bound by the then current version of these terms of service.
-          </p>
-
-          <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">8. Governing Law</h2>
-          <p className="text-slate-700 leading-relaxed">
-            These terms and conditions are governed by and construed in accordance with the laws of the jurisdiction where the company is located, and you irrevocably submit to the exclusive jurisdiction of the courts in that location.
-          </p>
-
-          <h2 className="text-2xl font-bold text-slate-900 mt-8 mb-4">9. Contact Us</h2>
-          <p className="text-slate-700 leading-relaxed">
-            If you have any questions about these Terms of Service, please contact us at:
-          </p>
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mt-4">
-            <p className="text-slate-700"><strong>Email:</strong> support@ieltspracticepro.com</p>
-            <p className="text-slate-700"><strong>Website:</strong> www.ieltspracticepro.com</p>
+        <div className="mt-8 rounded-4xl border border-slate-200 bg-white/90 backdrop-blur p-5 shadow-[0_24px_64px_-20px_rgba(15,23,42,0.22)]">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="h-11 w-11 rounded-3xl border border-slate-200 bg-slate-50 flex items-center justify-center">
+                <FileText className="w-5 h-5 text-blue-700" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-slate-900">Quick summary</p>
+                <p className="text-sm text-slate-600 font-medium mt-0.5">
+                  Use the platform responsibly, respect intellectual property, and follow all applicable laws.
+                </p>
+              </div>
+            </div>
+            <div className="shrink-0">
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-extrabold text-slate-800">
+                <RefreshCw className="w-4 h-4 text-slate-500" />
+                Last updated: {lastUpdated}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Back to Home */}
+        <div className="mt-8 space-y-4">
+          <Section icon={<ShieldCheck className="w-5 h-5 text-emerald-700" />} title="1. Acceptance of terms">
+            By accessing or using IELTS Practice Pro, you agree to be bound by these Terms of Service. If you do not agree, do not use the service.
+          </Section>
+
+          <Section icon={<Lock className="w-5 h-5 text-blue-700" />} title="2. Use license">
+            You may use the site materials for personal, non‑commercial use only. Under this license you may not:
+            <ul className="mt-3 space-y-2">
+              {[
+                "Modify or copy the materials",
+                "Use the materials for commercial purposes or public display",
+                "Attempt to decompile or reverse engineer any software",
+                "Remove copyright or proprietary notices",
+                "Mirror the materials on another server",
+              ].map((t) => (
+                <li key={t} className="flex gap-2">
+                  <span className="mt-1.5 h-2 w-2 rounded-full bg-slate-400 shrink-0" />
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+
+          <Section icon={<AlertTriangle className="w-5 h-5 text-amber-700" />} title="3. Disclaimer">
+            The service and materials are provided on an “as is” basis without warranties of any kind, either express or implied. We do not guarantee uninterrupted access or error‑free operation.
+          </Section>
+
+          <Section icon={<Scale className="w-5 h-5 text-indigo-700" />} title="4. Limitations of liability">
+            To the maximum extent permitted by law, IELTS Practice Pro will not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the service.
+          </Section>
+
+          <Section icon={<FileText className="w-5 h-5 text-slate-700" />} title="5. Accuracy of materials">
+            Content may include technical, typographical, or factual errors. We may update or change content at any time without notice.
+          </Section>
+
+          <Section icon={<Link2 className="w-5 h-5 text-fuchsia-700" />} title="6. Links to third‑party websites">
+            We are not responsible for the content of third‑party websites linked from our service. Accessing external links is at your own risk.
+          </Section>
+
+          <Section icon={<RefreshCw className="w-5 h-5 text-slate-700" />} title="7. Modifications to these terms">
+            We may revise these Terms from time to time. Your continued use of the service after changes become effective constitutes acceptance of the updated terms.
+          </Section>
+
+          <Section icon={<Gavel className="w-5 h-5 text-rose-700" />} title="8. Governing law">
+            These Terms are governed by the laws of the jurisdiction where the Company is located, without regard to conflict‑of‑law principles.
+          </Section>
+
+          <Section icon={<Mail className="w-5 h-5 text-slate-700" />} title="9. Contact">
+            <div className="rounded-4xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-sm font-extrabold text-slate-900">Questions?</p>
+              <p className="text-sm text-slate-600 font-medium mt-1">Contact us for help with Terms of Service:</p>
+              <div className="mt-4 space-y-2 text-sm">
+                <p className="text-slate-700 font-semibold">
+                  <span className="font-extrabold text-slate-900">Email:</span> support@ieltspracticepro.com
+                </p>
+                <p className="text-slate-700 font-semibold">
+                  <span className="font-extrabold text-slate-900">Website:</span> www.ieltspracticepro.com
+                </p>
+              </div>
+            </div>
+          </Section>
+        </div>
+
         <div className="mt-8">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-semibold"
-          >
+          <Link href="/" className="inline-flex items-center gap-2 text-blue-700 hover:text-blue-800 font-extrabold">
             <ChevronRight size={16} className="rotate-180" />
             Back to Home
           </Link>
@@ -90,3 +139,28 @@ export default function TermsPage() {
     </div>
   );
 }
+
+function Section({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-4xl border border-slate-200 bg-white/90 backdrop-blur p-6 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="h-11 w-11 rounded-3xl border border-slate-200 bg-slate-50 flex items-center justify-center shrink-0">
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-base sm:text-lg font-extrabold text-slate-900">{title}</h2>
+          <div className="mt-2 text-sm text-slate-700 font-medium leading-relaxed">{children}</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+

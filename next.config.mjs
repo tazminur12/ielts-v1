@@ -9,6 +9,12 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'upload.wikimedia.org',
       },
+      // Allow S3-hosted media (any bucket/region).
+      // Useful for user avatars & uploads in different environments.
+      {
+        protocol: 'https',
+        hostname: '**.amazonaws.com',
+      },
       {
         protocol: 'https',
         hostname: 'ielts-platform-media.s3.us-east-1.amazonaws.com',

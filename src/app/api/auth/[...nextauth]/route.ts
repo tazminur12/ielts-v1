@@ -61,7 +61,7 @@ export const authOptions: NextAuthOptions = {
             await User.create({
               name: user.name ?? 'New User',
               email: user.email as string,
-              role: 'user',
+              role: 'student',
             });
           }
           return true;
@@ -76,6 +76,15 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = user.role;
         token.id = user.id;
+        // Ensure middleware has onboarding status on first login
+        await connectDB();
+        const dbUser = await User.findOne({ email: token.email }).select(
+          "role onboardingCompletedAt"
+        );
+        if (dbUser) {
+          token.role = dbUser.role;
+          (token as any).onboardingCompletedAt = dbUser.onboardingCompletedAt;
+        }
       }
       // Refresh token data on update trigger
       if (trigger === 'update' || !token.role) {
@@ -89,6 +98,7 @@ export const authOptions: NextAuthOptions = {
           token.bio = dbUser.bio;
           token.targetScore = dbUser.targetScore;
           token.nextExamDate = dbUser.nextExamDate;
+          token.onboardingCompletedAt = dbUser.onboardingCompletedAt;
         }
       }
       return token;
@@ -102,6 +112,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).bio = token.bio;
         (session.user as any).targetScore = token.targetScore;
         (session.user as any).nextExamDate = token.nextExamDate;
+        (session.user as any).onboardingCompletedAt = (token as any).onboardingCompletedAt;
       }
       return session;
     },

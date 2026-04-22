@@ -15,11 +15,13 @@ import {
   BarChart3,
   ImageIcon,
   GraduationCap,
+  Gem,
   ScrollText,
 } from "lucide-react";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { redirect } from "next/navigation";
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
 import Subscription from "@/models/Subscription";
@@ -30,6 +32,21 @@ import Test from "@/models/Test";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
+
+  if (!session?.user?.id) {
+    redirect("/login?redirect=/dashboard");
+  }
+
+  // Enforce onboarding for students (server-side, independent of middleware token freshness)
+  if (session.user.role === "student") {
+    await dbConnect();
+    const u = await User.findById(session.user.id)
+      .select("onboardingCompletedAt")
+      .lean();
+    if (!u?.onboardingCompletedAt) {
+      redirect("/onboarding");
+    }
+  }
   
   // Connect to DB for admin stats
   if (session?.user?.role === "admin" || session?.user?.role === "super-admin") {
@@ -161,195 +178,254 @@ export default async function DashboardPage() {
       return "bg-amber-100 text-amber-800";
     }
 
-    return (
-      <div className="space-y-8 max-w-7xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+    const AdminStatCard = ({
+      label,
+      value,
+      hint,
+      icon,
+    }: {
+      label: string;
+      value: React.ReactNode;
+      hint?: React.ReactNode;
+      icon: React.ReactNode;
+    }) => (
+      <div className="rounded-4xl border border-slate-200 bg-white/95 backdrop-blur p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-              {today}
+            <p className="text-xs font-extrabold uppercase tracking-widest text-slate-500">
+              {label}
             </p>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mt-1">
-              Admin Dashboard
-            </h1>
-            <p className="text-slate-600 text-sm mt-1 max-w-xl">
-              Platform health, content, and billing at a glance. Use quick links
-              for day-to-day operations.
+            <p className="text-2xl sm:text-3xl font-extrabold tabular-nums text-slate-900 mt-1">
+              {value}
             </p>
+            {hint ? (
+              <p className="text-xs text-slate-500 font-medium mt-2">{hint}</p>
+            ) : null}
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/dashboard/admin/mock-tests/generate"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-linear-to-r from-sky-600 to-blue-700 text-white text-sm font-semibold shadow-sm hover:from-sky-700 hover:to-blue-800 transition-colors"
-            >
-              <Sparkles className="w-4 h-4" />
-              Generate mock (AI)
-            </Link>
-            <Link
-              href="/dashboard/orders"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-medium hover:bg-slate-50 transition-colors"
-            >
-              <ClipboardList className="w-4 h-4 text-slate-500" />
-              Orders
-            </Link>
+          <div className="h-11 w-11 rounded-3xl border border-slate-200 bg-slate-50 flex items-center justify-center shrink-0">
+            {icon}
+          </div>
+        </div>
+      </div>
+    );
+
+    const Panel = ({
+      title,
+      subtitle,
+      right,
+      children,
+    }: {
+      title: string;
+      subtitle?: string;
+      right?: React.ReactNode;
+      children: React.ReactNode;
+    }) => (
+      <div className="rounded-4xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-extrabold text-slate-900">{title}</p>
+            {subtitle ? (
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                {subtitle}
+              </p>
+            ) : null}
+          </div>
+          {right}
+        </div>
+        {children}
+      </div>
+    );
+
+    return (
+      <div className="space-y-6 max-w-7xl mx-auto">
+        {/* Hero */}
+        <div className="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-linear-to-br from-blue-600 to-indigo-600 text-white">
+                  <Sparkles className="h-4 w-4" />
+                </span>
+                <span className="text-xs font-extrabold uppercase tracking-widest text-slate-700">
+                  {today}
+                </span>
+              </div>
+              <h1 className="mt-4 text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                Admin dashboard
+              </h1>
+              <p className="text-slate-600 text-sm mt-1 max-w-2xl">
+                Platform health, content, and billing at a glance — built for
+                fast operations.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/dashboard/admin/mock-tests/generate"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-slate-900 text-white text-sm font-extrabold hover:bg-slate-800 shadow-lg shadow-slate-900/10"
+              >
+                <Sparkles className="w-4 h-4" />
+                Generate mock (AI)
+              </Link>
+              <Link
+                href="/dashboard/orders"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl border border-slate-200 bg-white text-slate-800 text-sm font-extrabold hover:bg-slate-50"
+              >
+                <ClipboardList className="w-4 h-4 text-slate-500" />
+                Orders
+              </Link>
+            </div>
           </div>
         </div>
 
-        {/* Primary KPIs */}
+        {/* KPIs */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-slate-500">Total users</p>
-                <p className="text-3xl font-bold tabular-nums text-slate-900 mt-1">
-                  {totalUsers}
-                </p>
-                <p className="text-xs text-slate-500 mt-2">
-                  <span className="font-semibold text-slate-700 tabular-nums">
-                    {studentsCount}
+          <AdminStatCard
+            label="Total users"
+            value={totalUsers}
+            hint={
+              <>
+                <span className="font-extrabold text-slate-900 tabular-nums">
+                  {studentsCount}
+                </span>{" "}
+                students
+              </>
+            }
+            icon={<Users className="w-5 h-5 text-blue-700" />}
+          />
+          <AdminStatCard
+            label="Active access"
+            value={activeSubs}
+            hint={
+              trialSubs > 0 ? (
+                <>
+                  <span className="font-extrabold text-slate-900 tabular-nums">
+                    {trialSubs}
                   </span>{" "}
-                  students
+                  trials running
+                </>
+              ) : (
+                <>active + trial</>
+              )
+            }
+            icon={<DollarSign className="w-5 h-5 text-emerald-700" />}
+          />
+          <AdminStatCard
+            label="Published tests"
+            value={publishedTests}
+            hint={
+              <>
+                <span className="font-extrabold text-slate-900 tabular-nums">
+                  {mockPublished}
+                </span>{" "}
+                mock ·{" "}
+                <span className="font-extrabold text-slate-900 tabular-nums">
+                  {practicePublished}
+                </span>{" "}
+                practice ·{" "}
+                <span className="font-extrabold text-slate-900 tabular-nums">
+                  {draftTests}
+                </span>{" "}
+                drafts
+              </>
+            }
+            icon={<BookOpen className="w-5 h-5 text-violet-700" />}
+          />
+          <AdminStatCard
+            label="Assignments"
+            value={totalAssignments}
+            hint={
+              <>
+                <span className="font-extrabold text-slate-900 tabular-nums">
+                  {totalPlans}
+                </span>{" "}
+                pricing plans
+              </>
+            }
+            icon={<Activity className="w-5 h-5 text-amber-700" />}
+          />
+        </div>
+
+        {/* Strip */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="rounded-4xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-widest text-slate-500">
+                  Attempts (7d)
+                </p>
+                <p className="text-2xl font-extrabold tabular-nums text-slate-900 mt-1">
+                  {attemptsLast7Days}
                 </p>
               </div>
-              <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                <Users className="w-5 h-5 text-blue-600" />
+              <div className="h-11 w-11 rounded-3xl border border-slate-200 bg-slate-50 flex items-center justify-center">
+                <BarChart3 className="w-5 h-5 text-slate-500" />
               </div>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
-            <div className="flex items-start justify-between gap-3">
+          <div className="rounded-4xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-medium text-slate-500">
-                  Active access
+                <p className="text-xs font-extrabold uppercase tracking-widest text-slate-500">
+                  Tip
                 </p>
-                <p className="text-3xl font-bold tabular-nums text-slate-900 mt-1">
-                  {activeSubs}
-                </p>
-                <p className="text-xs text-slate-500 mt-2">
-                  <span className="text-emerald-700 font-medium">active + trial</span>
-                  {trialSubs > 0 ? (
-                    <>
-                      {" "}
-                      ·{" "}
-                      <span className="tabular-nums">{trialSubs}</span> on trial
-                    </>
-                  ) : null}
-                </p>
-              </div>
-              <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-                <DollarSign className="w-5 h-5 text-emerald-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-slate-500">
-                  Live tests
-                </p>
-                <p className="text-3xl font-bold tabular-nums text-slate-900 mt-1">
-                  {publishedTests}
-                </p>
-                <p className="text-xs text-slate-500 mt-2">
-                  <span className="tabular-nums">{mockPublished}</span> mock ·{" "}
-                  <span className="tabular-nums">{practicePublished}</span> practice
-                  <span className="text-slate-400"> · </span>
-                  <span className="tabular-nums">{draftTests}</span> drafts
+                <p className="text-sm text-slate-700 font-medium mt-1">
+                  Publish tests from{" "}
+                  <Link
+                    href="/dashboard/admin/mock-tests"
+                    className="font-extrabold text-blue-700 hover:underline"
+                  >
+                    Mock
+                  </Link>{" "}
+                  or{" "}
+                  <Link
+                    href="/dashboard/admin/practice-tests"
+                    className="font-extrabold text-blue-700 hover:underline"
+                  >
+                    Practice
+                  </Link>{" "}
+                  — students only see{" "}
+                  <span className="font-extrabold">published</span> content.
                 </p>
               </div>
-              <div className="w-11 h-11 rounded-xl bg-violet-50 flex items-center justify-center shrink-0">
-                <BookOpen className="w-5 h-5 text-violet-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-slate-500">
-                  Content & plans
-                </p>
-                <p className="text-3xl font-bold tabular-nums text-slate-900 mt-1">
-                  {totalAssignments}
-                </p>
-                <p className="text-xs text-slate-500 mt-2">
-                  assignments ·{" "}
-                  <span className="font-semibold text-slate-700 tabular-nums">
-                    {totalPlans}
-                  </span>{" "}
-                  pricing plans
-                </p>
-              </div>
-              <div className="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
-                <Activity className="w-5 h-5 text-amber-600" />
+              <div className="h-11 w-11 rounded-3xl border border-slate-200 bg-slate-50 items-center justify-center shrink-0 hidden sm:flex">
+                <FileText className="w-5 h-5 text-slate-500" />
               </div>
             </div>
           </div>
         </div>
 
-        {/* Secondary strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-                Exam attempts (7d)
-              </p>
-              <p className="text-xl font-bold tabular-nums text-slate-900">
-                {attemptsLast7Days}
-              </p>
-            </div>
-            <BarChart3 className="w-8 h-8 text-slate-300" />
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 flex items-center justify-between sm:col-span-2">
-            <div>
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-                Tip
-              </p>
-              <p className="text-sm text-slate-700 mt-0.5">
-                Publish tests from{" "}
-                <Link
-                  href="/dashboard/admin/mock-tests"
-                  className="font-medium text-blue-600 hover:underline"
-                >
-                  Mock
-                </Link>{" "}
-                or{" "}
-                <Link
-                  href="/dashboard/admin/practice-tests"
-                  className="font-medium text-blue-600 hover:underline"
-                >
-                  Practice
-                </Link>{" "}
-                — students only see{" "}
-                <span className="font-medium">published</span> content.
-              </p>
-            </div>
-            <FileText className="w-8 h-8 text-slate-300 shrink-0 hidden sm:block" />
-          </div>
-        </div>
-
-        {/* Quick links */}
+        {/* Quick actions */}
         <div>
-          <h2 className="text-sm font-semibold text-slate-900 mb-3">
-            Quick actions
-          </h2>
+          <div className="flex items-end justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-sm font-extrabold text-slate-900">
+                Quick actions
+              </h2>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Jump to the most common admin tasks.
+              </p>
+            </div>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {quickLinks.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 hover:shadow-md transition-all"
+                className="group rounded-4xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 hover:shadow-md transition-all"
               >
-                <div
-                  className={`w-9 h-9 rounded-lg flex items-center justify-center mb-3 ${item.color}`}
-                >
-                  <item.icon className="w-4 h-4" />
+                <div className="flex items-start justify-between gap-3">
+                  <div
+                    className={`w-10 h-10 rounded-3xl flex items-center justify-center ${item.color}`}
+                  >
+                    <item.icon className="w-4 h-4" />
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-slate-400 transition-colors" />
                 </div>
-                <p className="text-sm font-semibold text-slate-900 group-hover:text-blue-700 transition-colors">
+                <p className="text-sm font-extrabold text-slate-900 mt-3 group-hover:text-blue-700 transition-colors">
                   {item.title}
                 </p>
-                <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
+                <p className="text-xs text-slate-500 font-medium mt-1 line-clamp-2">
                   {item.description}
                 </p>
               </Link>
@@ -357,18 +433,20 @@ export default async function DashboardPage() {
           </div>
         </div>
 
+        {/* Panels */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent users */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden ring-1 ring-slate-900/5">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-semibold text-slate-900">Recent registrations</h3>
+          <Panel
+            title="Recent registrations"
+            subtitle="New accounts created recently."
+            right={
               <Link
                 href="/dashboard/admin/users"
-                className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                className="text-sm font-extrabold text-blue-700 hover:text-blue-800"
               >
                 View all
               </Link>
-            </div>
+            }
+          >
             <ul className="divide-y divide-slate-100">
               {recentUsers.map((raw, idx) => {
                 const user = raw as {
@@ -378,55 +456,58 @@ export default async function DashboardPage() {
                   role?: string;
                 };
                 return (
-                <li key={user._id != null ? String(user._id) : `u-${idx}`}>
-                  <Link
-                    href="/dashboard/admin/users"
-                    className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-slate-50/80 transition-colors"
+                  <li
+                    key={user._id != null ? String(user._id) : `u-${idx}`}
+                    className="px-5 py-3.5 hover:bg-slate-50/70 transition-colors"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-sm shrink-0">
-                        {(user.name?.[0] || user.email?.[0] || "?").toUpperCase()}
+                    <Link
+                      href="/dashboard/admin/users"
+                      className="flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-full bg-linear-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-indigo-700 font-extrabold text-sm shrink-0">
+                          {(user.name?.[0] || user.email?.[0] || "?").toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-extrabold text-slate-900 truncate">
+                            {user.name || "Unknown"}
+                          </p>
+                          <p className="text-xs text-slate-500 font-medium truncate">
+                            {user.email}
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-900 truncate">
-                          {user.name || "Unknown"}
-                        </p>
-                        <p className="text-xs text-slate-500 truncate">{user.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
                       <span
-                        className={`px-2 py-0.5 rounded-md text-xs font-medium capitalize ${roleBadgeClass(
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold uppercase tracking-wide ${roleBadgeClass(
                           String(user.role || "student")
                         )}`}
                       >
                         {user.role || "student"}
                       </span>
-                      <ArrowRight className="w-4 h-4 text-slate-300" />
-                    </div>
-                  </Link>
-                </li>
+                    </Link>
+                  </li>
                 );
               })}
               {recentUsers.length === 0 && (
-                <li className="px-5 py-8 text-center text-sm text-slate-500">
+                <li className="px-5 py-10 text-center text-sm text-slate-500">
                   No users yet.
                 </li>
               )}
             </ul>
-          </div>
+          </Panel>
 
-          {/* Recent subscriptions */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden ring-1 ring-slate-900/5">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-semibold text-slate-900">Recent subscriptions</h3>
+          <Panel
+            title="Recent subscriptions"
+            subtitle="Latest plan activity."
+            right={
               <Link
                 href="/dashboard/orders"
-                className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                className="text-sm font-extrabold text-blue-700 hover:text-blue-800"
               >
                 Orders
               </Link>
-            </div>
+            }
+          >
             <ul className="divide-y divide-slate-100">
               {(recentSubs as unknown as {
                 _id: string;
@@ -434,46 +515,51 @@ export default async function DashboardPage() {
                 userId?: { name?: string; email?: string };
                 planId?: { name?: string };
               }[]).map((sub) => {
-                  const u = sub.userId;
-                  const p = sub.planId;
-                  const name =
-                    (u && typeof u === "object" && "name" in u && u.name) ||
-                    (u && typeof u === "object" && "email" in u && u.email) ||
-                    "User";
-                  const planName =
-                    p && typeof p === "object" && "name" in p && p.name
-                      ? String(p.name)
-                      : "Plan";
-                  return (
-                    <li key={String(sub._id)}>
-                      <Link
-                        href="/dashboard/orders"
-                        className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-slate-50/80 transition-colors"
+                const u = sub.userId;
+                const p = sub.planId;
+                const name =
+                  (u && typeof u === "object" && "name" in u && u.name) ||
+                  (u && typeof u === "object" && "email" in u && u.email) ||
+                  "User";
+                const planName =
+                  p && typeof p === "object" && "name" in p && p.name
+                    ? String(p.name)
+                    : "Plan";
+                return (
+                  <li
+                    key={String(sub._id)}
+                    className="px-5 py-3.5 hover:bg-slate-50/70 transition-colors"
+                  >
+                    <Link
+                      href="/dashboard/orders"
+                      className="flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold text-slate-900 truncate">
+                          {String(name)}
+                        </p>
+                        <p className="text-xs text-slate-500 font-medium truncate">
+                          {planName}
+                        </p>
+                      </div>
+                      <span
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold uppercase tracking-wide shrink-0 ${subStatusClass(
+                          String(sub.status || "")
+                        )}`}
                       >
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-900 truncate">
-                            {String(name)}
-                          </p>
-                          <p className="text-xs text-slate-500 truncate">{planName}</p>
-                        </div>
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-xs font-medium capitalize shrink-0 ${subStatusClass(
-                            String(sub.status || "")
-                          )}`}
-                        >
-                          {sub.status || "—"}
-                        </span>
-                      </Link>
-                    </li>
-                  );
-                })}
+                        {sub.status || "—"}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
               {recentSubs.length === 0 && (
-                <li className="px-5 py-8 text-center text-sm text-slate-500">
+                <li className="px-5 py-10 text-center text-sm text-slate-500">
                   No subscription activity yet.
                 </li>
               )}
             </ul>
-          </div>
+          </Panel>
         </div>
       </div>
     );
@@ -483,6 +569,27 @@ export default async function DashboardPage() {
   await dbConnect();
   
   const userId = session?.user?.id;
+
+  // User profile meta (target, next exam date)
+  const student = await User.findById(userId)
+    .select("name email targetScore nextExamDate")
+    .lean() as { name?: string; email?: string; targetScore?: string; nextExamDate?: Date } | null;
+
+  // Active plan (if any)
+  const activeSub = await Subscription.findOne({
+    userId,
+    status: { $in: ["active", "trial"] },
+    endDate: { $gte: new Date() },
+  })
+    .populate("planId", "name slug isPremium")
+    .lean() as
+    | (Omit<Record<string, unknown>, never> & {
+        status: string;
+        endDate: Date;
+        billingCycle?: string;
+        planId?: { name?: string; slug?: string; isPremium?: boolean };
+      })
+    | null;
   
   // Total Mock Tests Taken
   const totalMockTests = await Attempt.countDocuments({
@@ -494,7 +601,7 @@ export default async function DashboardPage() {
   const recentAttempts = await Attempt.find({ userId })
     .sort({ startedAt: -1 })
     .limit(5)
-    .populate("testId", "title")
+    .populate("testId", "title module examType")
     .lean();
 
   // Average Band Score
@@ -518,161 +625,323 @@ export default async function DashboardPage() {
   const totalTimeSeconds = allCompleted.reduce((acc, curr) => acc + (curr.timeSpent || 0), 0);
   const totalHours = (totalTimeSeconds / 3600).toFixed(1);
 
-  // Completed Lessons (Mockup feature - setting it statically or based on progress)
-  const completedLessons = 3;
+  const evaluatedCount = allEvaluated.length;
+  const bestBand =
+    evaluatedCount > 0
+      ? allEvaluated.reduce((max, a: any) => Math.max(max, Number(a.bandScore || 0)), 0).toFixed(1)
+      : "—";
+
+  const nextExam = student?.nextExamDate
+    ? new Date(student.nextExamDate).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : null;
+
+  const planName = activeSub?.planId?.name || "Free";
+  const planStatus = activeSub?.status || "free";
+  const planUntil = activeSub?.endDate
+    ? new Date(activeSub.endDate).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : null;
+
+  const today = new Date().toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
   return (
-    <div className="space-y-6">
-      {/* Welcome Section */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="space-y-8 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-500">Welcome back, {session?.user?.name || "Student"}! Here&apos;s your learning overview.</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            {today}
+          </p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mt-1">
+            Welcome back, {student?.name || session?.user?.name || "Student"}
+          </h1>
+          <p className="text-sm text-slate-600 mt-1 max-w-2xl">
+            Your IELTS practice hub — pick a task, stay consistent, and track your progress.
+          </p>
         </div>
-        <Link
-          href="/start-mock"
-          className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
-        >
-          <BookOpen className="w-4 h-4 mr-2" />
-          Start Practice
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/dashboard/mock-tests"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-linear-to-r from-indigo-600 via-sky-600 to-fuchsia-600 text-white text-sm font-semibold shadow-sm hover:from-indigo-700 hover:via-sky-700 hover:to-fuchsia-700 transition-colors"
+          >
+            <GraduationCap className="w-4 h-4" />
+            Start a full mock
+          </Link>
+          <Link
+            href="/dashboard/students/practice"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-medium hover:bg-slate-50 transition-colors"
+          >
+            <ClipboardList className="w-4 h-4 text-slate-500" />
+            Practice modules
+          </Link>
+        </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Total Practice Time</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">{totalHours} hrs</h3>
-            </div>
-            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-              <Clock className="w-5 h-5 text-blue-600" />
-            </div>
+      {/* Plan strip */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Current plan
+            </p>
+            <p className="text-lg font-extrabold text-slate-900 truncate">
+              {planName}
+            </p>
+            <p className="text-xs text-slate-600 mt-0.5">
+              {planStatus !== "free" ? `Status: ${planStatus}` : "No active subscription"}
+              {planUntil ? ` · Valid until ${planUntil}` : ""}
+              {nextExam ? ` · Next exam: ${nextExam}` : ""}
+            </p>
           </div>
-          <div className="mt-4 flex items-center text-sm">
-            <span className="text-gray-400">Time spent in mock tests</span>
+          <Link
+            href="/dashboard/students/subscription"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 shrink-0"
+          >
+            <Gem className="w-4 h-4" />
+            Manage subscription
+          </Link>
+        </div>
+        <div className="px-5 py-4 bg-slate-50/60 flex flex-wrap items-center gap-3 text-sm">
+          <span className="text-slate-600">
+            Target band:{" "}
+            <span className="font-semibold text-slate-900">
+              {student?.targetScore || "Not set"}
+            </span>
+          </span>
+          <span className="text-slate-300">•</span>
+          <Link href="/dashboard/students/profile" className="text-blue-600 font-semibold hover:underline">
+            Update profile
+          </Link>
+          <span className="text-slate-300">•</span>
+          <Link href="/dashboard/students/results" className="text-blue-600 font-semibold hover:underline">
+            View results
+          </Link>
+        </div>
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-slate-500">Practice time</p>
+              <p className="text-3xl font-bold tabular-nums text-slate-900 mt-1">
+                {totalHours}h
+              </p>
+              <p className="text-xs text-slate-500 mt-2">Time spent in submitted attempts</p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-sky-50 flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5 text-sky-600" />
+            </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-gray-500">Mock Tests Taken</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">{totalMockTests}</h3>
+              <p className="text-sm font-medium text-slate-500">Mocks completed</p>
+              <p className="text-3xl font-bold tabular-nums text-slate-900 mt-1">
+                {totalMockTests}
+              </p>
+              <p className="text-xs text-slate-500 mt-2">Submitted/evaluated mock tests</p>
             </div>
-            <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-purple-600" />
+            <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <GraduationCap className="w-5 h-5 text-indigo-600" />
             </div>
-          </div>
-          <div className="mt-4 flex items-center text-sm">
-            <span className="text-gray-400">Total tests submitted</span>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-gray-500">Average Band Score</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">{avgBandScore}</h3>
+              <p className="text-sm font-medium text-slate-500">Average band</p>
+              <p className="text-3xl font-bold tabular-nums text-slate-900 mt-1">
+                {avgBandScore}
+              </p>
+              <p className="text-xs text-slate-500 mt-2">From evaluated attempts only</p>
             </div>
-            <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
-              <Target className="w-5 h-5 text-green-600" />
+            <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+              <Target className="w-5 h-5 text-emerald-600" />
             </div>
           </div>
-          <div className="mt-4 flex items-center text-sm">
-            {avgBandScore !== "N/A" ? (
-              <span className="text-green-600 font-medium flex items-center">
-                Keep practicing to improve!
-              </span>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-slate-500">Best band</p>
+              <p className="text-3xl font-bold tabular-nums text-slate-900 mt-1">
+                {bestBand}
+              </p>
+              <p className="text-xs text-slate-500 mt-2">
+                Personal best (evaluated)
+              </p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+              <Award className="w-5 h-5 text-amber-600" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Recent activity</p>
+              <p className="text-xs text-slate-500 mt-0.5">Pick up where you left off.</p>
+            </div>
+            <Link
+              href="/dashboard/progress"
+              className="text-sm font-semibold text-blue-600 hover:underline"
+            >
+              View progress
+            </Link>
+          </div>
+
+          <div className="divide-y divide-slate-100">
+            {recentAttempts.length > 0 ? (
+              recentAttempts.map((item: any) => {
+                const title = item.testId?.title || `${item.module} Exam`;
+                const date = new Date(item.startedAt).toLocaleDateString("en-GB", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                });
+                const status =
+                  item.status === "in_progress"
+                    ? { label: "In progress", cls: "bg-amber-50 text-amber-900 border-amber-200" }
+                    : item.status === "evaluated"
+                    ? { label: "Evaluated", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" }
+                    : { label: "Submitted", cls: "bg-sky-50 text-sky-800 border-sky-200" };
+
+                const right =
+                  item.status === "in_progress"
+                    ? { text: "Resume", href: `/exam?testId=${String(item.testId?._id || "")}` }
+                    : { text: "View", href: `/exam/results?attemptId=${String(item._id)}` };
+
+                return (
+                  <Link
+                    key={String(item._id)}
+                    href={right.href}
+                    className="px-5 py-4 hover:bg-slate-50/60 transition-colors flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{title}</p>
+                      <p className="text-xs text-slate-500 mt-0.5 capitalize">
+                        {String(item.module)} · {date}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`px-2.5 py-1 rounded-lg border text-[11px] font-extrabold uppercase tracking-wide ${status.cls}`}>
+                        {status.label}
+                      </span>
+                      <span className="text-sm font-semibold text-slate-700">
+                        {right.text}
+                      </span>
+                      <ArrowRight className="w-4 h-4 text-slate-300" />
+                    </div>
+                  </Link>
+                );
+              })
             ) : (
-             <span className="text-gray-400">Complete more tests to get score</span>
+              <div className="px-6 py-10 text-center">
+                <p className="text-sm text-slate-600">No attempts yet.</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Start a mock test to generate your first report.
+                </p>
+                <div className="mt-4 flex justify-center gap-2">
+                  <Link
+                    href="/dashboard/mock-tests"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800"
+                  >
+                    <GraduationCap className="w-4 h-4" />
+                    Start mock
+                  </Link>
+                  <Link
+                    href="/dashboard/students/practice"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50"
+                  >
+                    <ClipboardList className="w-4 h-4 text-slate-500" />
+                    Practice
+                  </Link>
+                </div>
+              </div>
             )}
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Completed Lessons</p>
-              <h3 className="text-2xl font-bold text-gray-900 mt-1">{completedLessons}/45</h3>
-            </div>
-            <div className="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center">
-              <Award className="w-5 h-5 text-orange-600" />
-            </div>
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <p className="text-sm font-semibold text-slate-900">Next steps</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              A simple plan that moves your score.
+            </p>
           </div>
-          <div className="mt-4 w-full bg-gray-100 rounded-full h-1.5">
-            <div className="bg-orange-500 h-1.5 rounded-full w-[10%]"></div>
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Activity & Recommendations */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Activity */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900">Recent Activity</h3>
-            <Link href="/dashboard/progress" className="text-sm text-blue-600 hover:text-blue-700 font-medium">
-              View Progress
+          <div className="p-5 space-y-4">
+            <Link
+              href="/dashboard/students/practice"
+              className="block rounded-2xl border border-slate-200 bg-linear-to-br from-sky-50 to-indigo-50 p-4 hover:shadow-md transition-shadow"
+            >
+              <p className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                Daily practice
+              </p>
+              <p className="text-base font-extrabold text-slate-900 mt-1">
+                20 minutes — Reading & Listening
+              </p>
+              <p className="text-sm text-slate-600 mt-1">
+                Build speed and accuracy with timed sets.
+              </p>
+              <p className="text-sm font-semibold text-blue-700 mt-3 inline-flex items-center gap-2">
+                Start modules <ArrowRight className="w-4 h-4" />
+              </p>
             </Link>
-          </div>
-          <div className="divide-y divide-gray-100">
-            {recentAttempts.length > 0 ? (
-              recentAttempts.map((item: any) => (
-                <div key={item._id} className="p-4 hover:bg-gray-50 transition-colors flex items-center justify-between">
-                  <div className="flex items-center space-x-4">
-                    <div className={`w-2 h-2 rounded-full ${item.status === 'in_progress' ? 'bg-yellow-400' : 'bg-green-500'}`}></div>
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-900">{item.testId?.title || `${item.module} Exam`}</h4>
-                      <p className="text-xs text-gray-500 capitalize">{item.module} • {new Date(item.startedAt).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      item.status === 'in_progress' 
-                        ? 'bg-yellow-100 text-yellow-800' 
-                        : 'bg-green-100 text-green-800'
-                    }`}>
-                      {item.status === 'in_progress' 
-                        ? 'In Progress' 
-                        : (item.bandScore ? `Band ${item.bandScore}` : 'Evaluated')}
-                    </span>
-                    <ArrowRight className="w-4 h-4 text-gray-400 ml-4" />
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="p-8 text-center">
-                <p className="text-gray-500 text-sm">No recent mock tests found.</p>
-                <Link href="/start-mock" className="text-blue-600 font-medium text-sm mt-2 block hover:underline">
-                  Take your first test
-                </Link>
-              </div>
-             )}
-          </div>
-        </div>
 
-        {/* Recommended Practice */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-900">Recommended for You</h3>
-          </div>
-          <div className="p-4 space-y-4">
-            <div className="p-4 rounded-lg bg-blue-50 border border-blue-100">
-              <h4 className="font-medium text-blue-900 mb-1">Writing Task 2 Strategy</h4>
-              <p className="text-sm text-blue-700 mb-3">Improve your essay structure and coherence.</p>
-              <button className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center">
-                Start Lesson <ArrowRight className="w-4 h-4 ml-1" />
-              </button>
-            </div>
-            <div className="p-4 rounded-lg bg-purple-50 border border-purple-100">
-              <h4 className="font-medium text-purple-900 mb-1">Speaking Part 2</h4>
-              <p className="text-sm text-purple-700 mb-3">Practice 2-minute monologue on common topics.</p>
-              <button className="text-sm font-medium text-purple-600 hover:text-purple-700 flex items-center">
-                Start Practice <ArrowRight className="w-4 h-4 ml-1" />
-              </button>
-            </div>
+            <Link
+              href="/dashboard/mock-tests"
+              className="block rounded-2xl border border-slate-200 bg-linear-to-br from-amber-50 to-rose-50 p-4 hover:shadow-md transition-shadow"
+            >
+              <p className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                Weekly mock
+              </p>
+              <p className="text-base font-extrabold text-slate-900 mt-1">
+                Take 1 full mock under exam timing
+              </p>
+              <p className="text-sm text-slate-600 mt-1">
+                Then review mistakes and track improvement.
+              </p>
+              <p className="text-sm font-semibold text-indigo-700 mt-3 inline-flex items-center gap-2">
+                Browse mocks <ArrowRight className="w-4 h-4" />
+              </p>
+            </Link>
+
+            <Link
+              href="/dashboard/students/profile"
+              className="block rounded-2xl border border-slate-200 bg-white p-4 hover:bg-slate-50 transition-colors"
+            >
+              <p className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                Personalise
+              </p>
+              <p className="text-base font-extrabold text-slate-900 mt-1">
+                Set your target and exam date
+              </p>
+              <p className="text-sm text-slate-600 mt-1">
+                We’ll keep your dashboard aligned to your goal.
+              </p>
+            </Link>
           </div>
         </div>
       </div>

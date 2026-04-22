@@ -26,13 +26,32 @@ export async function middleware(request: NextRequest) {
   }
 
   // Protected routes - require authentication
-  const protectedPaths = ["/dashboard", "/start-mock"];
+  const protectedPaths = ["/dashboard", "/start-mock", "/onboarding"];
   const isProtectedPath = protectedPaths.some((path) => pathname.startsWith(path));
 
   if (isProtectedPath && !token) {
     const url = new URL("/login", request.url);
     url.searchParams.set("redirect", pathname);
     return NextResponse.redirect(url);
+  }
+
+  // Onboarding enforcement for students
+  const isStudent = token?.role === "student";
+  const isOnboarded = Boolean((token as any)?.onboardingCompletedAt);
+
+  if (token && isStudent && !isOnboarded) {
+    const allowedDuringOnboarding =
+      pathname === "/onboarding" ||
+      pathname.startsWith("/api/") ||
+      pathname.startsWith("/exam");
+
+    if (!allowedDuringOnboarding) {
+      return NextResponse.redirect(new URL("/onboarding", request.url));
+    }
+  }
+
+  if (token && isStudent && isOnboarded && pathname === "/onboarding") {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   // Admin routes - require admin role

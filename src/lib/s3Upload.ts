@@ -5,7 +5,12 @@ import { randomUUID } from "crypto";
 const BUCKET = process.env.AWS_BUCKET_NAME!;
 const REGION = process.env.AWS_BUCKET_REGION || "us-east-1";
 
-type UploadFolder = "tests/audio" | "tests/images" | "tests/speaking" | "tests/reading";
+type UploadFolder =
+  | "tests/audio"
+  | "tests/images"
+  | "tests/speaking"
+  | "tests/reading"
+  | "users/avatars";
 
 /**
  * Upload a file buffer to S3 under a given folder

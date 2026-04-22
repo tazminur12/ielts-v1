@@ -15,12 +15,14 @@ import {
   Zap,
   Eye,
   EyeOff,
+  Sparkles,
 } from 'lucide-react';
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const registered = searchParams.get('registered');
+  const redirectTo = searchParams.get('redirect');
 
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
@@ -63,7 +65,7 @@ function LoginForm() {
         });
         setLoading(false);
       } else {
-        router.push('/');
+        router.push(redirectTo || '/dashboard');
         router.refresh();
       }
     } catch (err) {
@@ -76,22 +78,33 @@ function LoginForm() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
-      className="w-full max-w-md bg-white border border-slate-200/60 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] rounded-[2.5rem] p-8 sm:p-10 relative overflow-hidden"
+      className="w-full max-w-md bg-white/90 backdrop-blur border border-slate-200 shadow-[0_24px_64px_-20px_rgba(15,23,42,0.25)] rounded-4xl p-7 sm:p-9 relative overflow-hidden"
     >
-      <div className="mb-8 relative">
-        <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-          Welcome Back
+      <div className="relative">
+        <div className="flex items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest text-slate-700 shadow-sm">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-linear-to-br from-blue-600 to-indigo-600 text-white">
+              <Sparkles className="h-3.5 w-3.5" />
+            </span>
+            Student portal
+          </div>
+          <span className="text-[11px] font-semibold text-slate-500">
+            Secure sign-in
+          </span>
+        </div>
+
+        <h2 className="mt-5 text-3xl font-extrabold text-slate-900 tracking-tight">
+          Welcome back
         </h2>
-        <p className="mt-2 text-slate-500 font-medium">
-          Sign in to access your dashboard.
+        <p className="mt-1.5 text-sm text-slate-600 font-medium">
+          Sign in to continue to your IELTS dashboard.
         </p>
       </div>
 
-    
       <button
         type="button"
-        onClick={() => signIn('google', { callbackUrl: '/' })}
-        className="w-full flex items-center justify-center gap-3 py-3.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-xl font-bold text-slate-700 transition-all duration-200 mb-6 shadow-sm group"
+        onClick={() => signIn('google', { callbackUrl: redirectTo || '/dashboard' })}
+        className="mt-7 w-full flex items-center justify-center gap-3 py-3.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-2xl font-extrabold text-slate-800 transition-all duration-200 shadow-sm group focus:outline-none focus:ring-4 focus:ring-blue-500/10"
       >
         <svg className="w-5 h-5" viewBox="0 0 24 24">
           <path
@@ -127,46 +140,54 @@ function LoginForm() {
 
       <form className="space-y-5" onSubmit={handleSubmit}>
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-sm font-bold text-slate-700 ml-1">
-              Email Address
+          <div className="space-y-2">
+            <label className="text-xs font-extrabold uppercase tracking-wider text-slate-600 ml-1">
+              Email address
             </label>
-            <div className="relative group">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors w-5 h-5" />
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
               <input
                 name="email"
                 type="email"
                 required
                 value={formData.email}
                 onChange={handleChange}
-                className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 outline-none transition-all text-slate-900 font-medium"
-                placeholder="email@example.com"
+                autoComplete="email"
+                className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 outline-none transition-all text-slate-900 font-semibold placeholder:text-slate-400"
+                placeholder="you@example.com"
               />
             </div>
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <div className="flex justify-between items-center px-1">
-              <label className="text-sm font-bold text-slate-700">
+              <label className="text-xs font-extrabold uppercase tracking-wider text-slate-600">
                 Password
               </label>
-              <a href="/forgot-password" className="text-xs font-bold text-blue-600 hover:text-blue-700">Forgot?</a>
+              <a
+                href="/forgot-password"
+                className="text-xs font-extrabold text-blue-600 hover:text-blue-700"
+              >
+                Forgot?
+              </a>
             </div>
-            <div className="relative group">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors w-5 h-5" />
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
               <input
                 name="password"
                 type={showPassword ? 'text' : 'password'}
                 required
                 value={formData.password}
                 onChange={handleChange}
-                className="w-full pl-12 pr-12 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 outline-none transition-all text-slate-900 font-medium"
+                autoComplete="current-password"
+                className="w-full pl-12 pr-12 py-3.5 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 outline-none transition-all text-slate-900 font-semibold placeholder:text-slate-400"
                 placeholder="••••••••"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-slate-50 transition-colors"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
@@ -177,20 +198,20 @@ function LoginForm() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full flex items-center justify-center gap-2 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-200 transition-all active:scale-[0.98] disabled:opacity-70 mt-4 group"
+          className="w-full flex items-center justify-center gap-2 py-4 bg-slate-900 hover:bg-slate-800 text-white font-extrabold rounded-2xl shadow-lg shadow-slate-900/10 transition-all active:scale-[0.99] disabled:opacity-70 mt-4 group focus:outline-none focus:ring-4 focus:ring-slate-900/10"
         >
-          {loading ? 'Authenticating...' : 'Sign in to Dashboard'}
+          {loading ? 'Signing in…' : 'Sign in'}
           {!loading && (
             <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           )}
         </button>
       </form>
 
-      <p className="mt-8 text-center text-slate-500 font-semibold text-sm">
+      <p className="mt-7 text-center text-slate-600 font-semibold text-sm">
         Don&apos;t have an account?{' '}
         <Link
           href="/signup"
-          className="text-blue-600 hover:text-blue-700 font-bold decoration-2 underline-offset-4 hover:underline"
+          className="text-blue-700 hover:text-blue-800 font-extrabold decoration-2 underline-offset-4 hover:underline"
         >
           Create Account
         </Link>
@@ -201,82 +222,89 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-[#F8FAFC] relative overflow-hidden flex flex-col">
-      {/* Background Gradients */}
-      <div className="absolute top-0 right-0 w-[50%] h-[50%] bg-blue-100/40 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/3" />
-      <div className="absolute bottom-0 left-0 w-[40%] h-[40%] bg-indigo-100/40 blur-[100px] rounded-full translate-y-1/3 -translate-x-1/4" />
+    <div className="min-h-screen bg-[#F8FAFC] relative overflow-hidden">
+      {/* Background */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-32 -right-24 h-[420px] w-[420px] rounded-full bg-blue-200/40 blur-[110px]" />
+        <div className="absolute -bottom-36 -left-24 h-[420px] w-[420px] rounded-full bg-indigo-200/35 blur-[110px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.04)_1px,transparent_0)] bg-size-[22px_22px]" />
+      </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full mt-22 pb-16">
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-          {/* Left Column */}
-          <div className="hidden lg:flex flex-col items-start">
+      <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 pt-28 pb-12 lg:pt-32 lg:pb-16">
+        <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+          {/* Left */}
+          <div className="hidden lg:block">
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-blue-100 shadow-sm mb-8"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm"
             >
-              <span className="flex h-2 w-2 rounded-full bg-blue-600 animate-pulse"></span>
-              <span className="text-sm font-semibold text-slate-600 tracking-wide uppercase">
-                Student Portal
+              <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              <span className="text-xs font-extrabold uppercase tracking-widest text-slate-700">
+                Learn • Practice • Improve
               </span>
             </motion.div>
 
             <motion.h1
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="text-5xl lg:text-6xl font-bold text-slate-900 leading-[1.1] mb-6 tracking-tight"
+              transition={{ delay: 0.08 }}
+              className="mt-6 text-5xl xl:text-6xl font-extrabold text-slate-900 tracking-tight leading-[1.05]"
             >
-              Unlock Your <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">
-                Academic Potential
+              Your IELTS practice,
+              <br />
+              <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-700 to-indigo-700">
+                made consistent.
               </span>
             </motion.h1>
 
             <motion.p
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="text-lg text-slate-600 mb-10 max-w-md font-medium leading-relaxed"
+              transition={{ delay: 0.16 }}
+              className="mt-4 text-lg text-slate-600 max-w-xl font-medium leading-relaxed"
             >
-              Log in to access your personalized IELTS study plan, track
-              progress, and take AI-evaluated mock tests.
+              Train with realistic mock tests, track your progress, and get clear feedback—so you always know what to practice next.
             </motion.p>
 
-            <div className="grid gap-4 w-full max-w-sm">
+            <div className="mt-8 grid gap-3 max-w-md">
               {[
                 {
-                  icon: <Zap className="text-orange-500" size={20} />,
-                  text: 'Instant Writing Analysis',
+                  icon: <Zap className="text-amber-600" size={18} />,
+                  title: 'Fast feedback',
+                  desc: 'Actionable suggestions after each attempt.',
                 },
                 {
-                  icon: <ShieldCheck className="text-blue-500" size={20} />,
-                  text: 'Secure Exam Environment',
+                  icon: <ShieldCheck className="text-blue-700" size={18} />,
+                  title: 'Secure access',
+                  desc: 'Your account and progress stay protected.',
                 },
                 {
-                  icon: <CheckCircle2 className="text-green-500" size={20} />,
-                  text: 'Detailed Band Reports',
+                  icon: <CheckCircle2 className="text-emerald-600" size={18} />,
+                  title: 'Track improvement',
+                  desc: 'See trends across practice and mocks.',
                 },
               ].map((item, i) => (
                 <motion.div
-                  key={i}
-                  initial={{ opacity: 0, x: -20 }}
+                  key={item.title}
+                  initial={{ opacity: 0, x: -14 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 + i * 0.1 }}
-                  className="flex items-center gap-4 bg-white/60 backdrop-blur-md p-4 rounded-[1.5rem] border border-white shadow-sm"
+                  transition={{ delay: 0.22 + i * 0.08 }}
+                  className="flex items-start gap-3 rounded-3xl border border-slate-200 bg-white/70 backdrop-blur px-4 py-3 shadow-sm"
                 >
-                  <div className="p-2.5 bg-white rounded-xl shadow-sm border border-slate-50">
+                  <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900/5">
                     {item.icon}
                   </div>
-                  <span className="font-bold text-slate-700 text-sm">
-                    {item.text}
-                  </span>
+                  <div>
+                    <p className="text-sm font-extrabold text-slate-900">{item.title}</p>
+                    <p className="text-xs text-slate-600 font-medium mt-0.5">{item.desc}</p>
+                  </div>
                 </motion.div>
               ))}
             </div>
           </div>
 
-          {/* Right Column: Login Form */}
+          {/* Right */}
           <div className="flex items-center justify-center lg:justify-end">
             <Suspense
               fallback={
