@@ -4,7 +4,6 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectDB from "@/lib/mongodb";
 import Answer from "@/models/Answer";
 import Attempt from "@/models/Attempt";
-import mongoose from "mongoose";
 import { evaluateWriting } from "@/lib/aiEvaluation";
 // Ensure Question model is loaded
 import Question from "@/models/Question";

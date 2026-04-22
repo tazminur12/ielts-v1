@@ -11,24 +11,23 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public paths that don't require authentication
-  const publicPaths = ["/", "/pricing", "/about", "/login", "/signup", "/api/auth"];
-  
-  // Free trial path - allow one test without authentication
-  if (pathname === "/exam") {
-    // Allow access but track usage via cookies/session
-    return NextResponse.next();
-  }
+  const publicPathExact = ["/", "/pricing", "/about", "/login", "/signup"];
+  const publicPathPrefixes = ["/api/auth"];
 
-  // Check if path is public
-  const isPublicPath = publicPaths.some(path => pathname.startsWith(path));
-  
-  if (isPublicPath) {
+  const isPublicPath =
+    publicPathExact.includes(pathname) ||
+    publicPathPrefixes.some((prefix) => pathname.startsWith(prefix));
+
+  if (isPublicPath) return NextResponse.next();
+
+  // Free trial exam routes (guest allowed). Actual access is enforced by API.
+  if (pathname === "/exam" || pathname.startsWith("/exam/")) {
     return NextResponse.next();
   }
 
   // Protected routes - require authentication
-  const protectedPaths = ["/dashboard", "/exam/results", "/start-mock"];
-  const isProtectedPath = protectedPaths.some(path => pathname.startsWith(path));
+  const protectedPaths = ["/dashboard", "/start-mock"];
+  const isProtectedPath = protectedPaths.some((path) => pathname.startsWith(path));
 
   if (isProtectedPath && !token) {
     const url = new URL("/login", request.url);

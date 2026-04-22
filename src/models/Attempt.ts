@@ -3,7 +3,8 @@ import mongoose, { Schema, Document, Model } from "mongoose";
 export type AttemptStatus = "in_progress" | "submitted" | "evaluated";
 
 export interface IAttempt extends Document {
-  userId: mongoose.Types.ObjectId;
+  userId?: mongoose.Types.ObjectId;
+  guestId?: string;
   testId: mongoose.Types.ObjectId;
   status: AttemptStatus;
   startedAt: Date;
@@ -44,7 +45,11 @@ const AttemptSchema: Schema<IAttempt> = new Schema(
     userId: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      index: true,
+    },
+    guestId: {
+      type: String,
       index: true,
     },
     testId: {
@@ -120,7 +125,12 @@ const AttemptSchema: Schema<IAttempt> = new Schema(
 );
 
 AttemptSchema.index({ userId: 1, testId: 1 });
+AttemptSchema.index({ guestId: 1, testId: 1 });
 AttemptSchema.index({ userId: 1, status: 1 });
+AttemptSchema.index({ guestId: 1, status: 1 });
+
+// Delete cached model to force rebuild with updated schema
+delete (mongoose.models as Record<string, unknown>).Attempt;
 
 const Attempt: Model<IAttempt> =
   mongoose.models.Attempt || mongoose.model<IAttempt>("Attempt", AttemptSchema);

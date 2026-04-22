@@ -2,7 +2,8 @@ import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IAnswer extends Document {
   attemptId: mongoose.Types.ObjectId;
-  userId: mongoose.Types.ObjectId;
+  userId?: mongoose.Types.ObjectId;
+  guestId?: string;
   testId: mongoose.Types.ObjectId;
   questionId: mongoose.Types.ObjectId;
   questionNumber: number;
@@ -47,7 +48,11 @@ const AnswerSchema: Schema<IAnswer> = new Schema(
     userId: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      index: true,
+    },
+    guestId: {
+      type: String,
       index: true,
     },
     testId: {
@@ -118,6 +123,10 @@ const AnswerSchema: Schema<IAnswer> = new Schema(
 
 AnswerSchema.index({ attemptId: 1, questionNumber: 1 });
 AnswerSchema.index({ userId: 1, attemptId: 1 });
+AnswerSchema.index({ guestId: 1, attemptId: 1 });
+
+// Delete cached model to force rebuild with updated schema
+delete (mongoose.models as Record<string, unknown>).Answer;
 
 const Answer: Model<IAnswer> =
   mongoose.models.Answer || mongoose.model<IAnswer>("Answer", AnswerSchema);

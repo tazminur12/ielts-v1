@@ -6,27 +6,32 @@ import Attempt from "@/models/Attempt";
 import Answer from "@/models/Answer";
 import Question from "@/models/Question";
 import { rawScoreToBand } from "@/lib/aiEvaluation";
+import { getGuestId } from "@/lib/guestSession";
 
 // GET /api/attempts/[id]
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    const guestId = session ? null : getGuestId(req);
+    if (!session && !guestId) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
     await connectDB();
     const { id } = await params;
 
-    const attempt = await Attempt.findOne({
-      _id: id,
-      userId: session.user.id,
-    }).populate("testId", "title module examType duration totalQuestions").lean();
+    const attempt = await Attempt.findOne(
+      session?.user?.id ? { _id: id, userId: session.user.id } : { _id: id, guestId }
+    )
+      .populate("testId", "title module examType duration totalQuestions")
+      .lean();
 
     if (!attempt) return NextResponse.json({ message: "Not found" }, { status: 404 });
 
-    const answers = await Answer.find({ attemptId: id }).lean();
+    const answers = await Answer.find(
+      session?.user?.id ? { attemptId: id, userId: session.user.id } : { attemptId: id, guestId }
+    ).lean();
     return NextResponse.json({ attempt, answers });
   } catch (error: any) {
     return NextResponse.json({ message: error.message }, { status: 500 });
@@ -41,13 +46,16 @@ export async function PATCH(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    const guestId = session ? null : getGuestId(req);
+    if (!session && !guestId) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
     await connectDB();
     const { id } = await params;
     const body = await req.json();
 
-    const attempt = await Attempt.findOne({ _id: id, userId: session.user.id });
+    const attempt = await Attempt.findOne(
+      session?.user?.id ? { _id: id, userId: session.user.id } : { _id: id, guestId }
+    );
     if (!attempt) return NextResponse.json({ message: "Not found" }, { status: 404 });
 
     if (body.action === "submit") {
@@ -59,7 +67,9 @@ export async function PATCH(
       const timeSpent = Math.floor((now.getTime() - attempt.startedAt.getTime()) / 1000);
 
       // Fetch all answers for this attempt
-      const answers = await Answer.find({ attemptId: id });
+      const answers = await Answer.find(
+        session?.user?.id ? { attemptId: id, userId: session.user.id } : { attemptId: id, guestId }
+      );
 
       // For objective modules (listening/reading), auto-calculate score
       const isObjective = ["listening", "reading"].includes(attempt.module);

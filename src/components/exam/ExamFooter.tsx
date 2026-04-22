@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { useExam } from "./ExamContext";
 
 export const ExamFooter = () => {
