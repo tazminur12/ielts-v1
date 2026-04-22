@@ -1,7 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Speaker, BookOpen, ArrowRight, ShieldCheck } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  BadgeCheck,
+  BookOpen,
+  ChevronRight,
+  Loader2,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Volume2,
+} from "lucide-react";
 import Link from "next/link";
 
 interface Phonetic {
@@ -35,6 +44,13 @@ export default function VocabularyPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [audioUrl, setAudioUrl] = useState("");
+
+  const resolvedPhonetic = useMemo(() => {
+    if (!wordData) return "";
+    if (wordData.phonetic) return wordData.phonetic;
+    const fromPhonetics = wordData.phonetics?.find((p) => p.text)?.text;
+    return fromPhonetics || "";
+  }, [wordData]);
 
   const handleSearch = async (word: string) => {
     if (!word.trim()) {
@@ -91,96 +107,110 @@ export default function VocabularyPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] font-sans pb-20 mt-16 sm:mt-20">
-      {/* Professional Hero Section */}
-      <div className="bg-white border-b border-slate-200 pt-10 pb-8 px-4 sm:px-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-80 h-80 rounded-full bg-blue-50 blur-3xl pointer-events-none"></div>
-        <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-64 h-64 rounded-full bg-emerald-50 blur-3xl pointer-events-none"></div>
-
-        <div className="max-w-6xl mx-auto relative z-10 flex flex-col items-center text-center">
-          <div className="flex items-center justify-center gap-2 text-blue-600 font-semibold mb-2 text-xs uppercase tracking-wider">
-            <BookOpen size={14} />
-            <span>IELTS Vocabulary Builder</span>
-          </div>
-          <h1 className="text-2xl md:text-4xl font-extrabold text-slate-900 mb-3 tracking-tight">
-            Comprehensive <span className="text-blue-600">Word Definitions</span>
-          </h1>
-          <p className="text-sm md:text-base text-slate-600 max-w-2xl leading-relaxed mb-6">
-            Search for any English word to unlock its definitions, phonetics, examples, and synonyms. Build your vocabulary with authentic examples.
-          </p>
-        </div>
+    <div className="min-h-screen bg-[#F8FAFC] relative overflow-hidden">
+      {/* Background */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-32 -right-24 h-[420px] w-[420px] rounded-full bg-blue-200/35 blur-[110px]" />
+        <div className="absolute -bottom-36 -left-24 h-[420px] w-[420px] rounded-full bg-indigo-200/30 blur-[110px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.04)_1px,transparent_0)] bg-size-[22px_22px]" />
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="relative mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 pt-28 pb-16 lg:pt-32">
+        {/* Header */}
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-linear-to-br from-blue-600 to-indigo-600 text-white">
+              <Sparkles className="h-4 w-4" />
+            </span>
+            <span className="text-xs font-extrabold uppercase tracking-widest text-slate-700">
+              IELTS vocabulary
+            </span>
+          </div>
+          <h1 className="mt-5 text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+            Definitions that are easy to revise
+          </h1>
+          <p className="mt-2 text-sm sm:text-base text-slate-600 font-medium max-w-2xl mx-auto">
+            Search any English word to get pronunciation, meanings, examples, and useful synonyms—perfect for IELTS preparation.
+          </p>
+        </div>
+
         {/* Search Bar */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm mb-8">
-          <div className="flex flex-col sm:flex-row gap-2">
+        <div className="mt-8 bg-white/90 backdrop-blur rounded-4xl border border-slate-200 p-4 sm:p-5 shadow-[0_24px_64px_-20px_rgba(15,23,42,0.22)]">
+          <div className="flex flex-col sm:flex-row gap-2.5">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
               <input
                 type="text"
-                placeholder="Search for any English word..."
+                placeholder="Type a word (e.g. “resilient”)"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all text-sm text-slate-900 placeholder-slate-500"
+                onKeyDown={handleKeyPress}
+                autoComplete="off"
+                spellCheck={false}
+                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all text-sm font-semibold text-slate-900 placeholder-slate-400 bg-white"
               />
             </div>
             <button
               onClick={() => handleSearch(searchTerm)}
               disabled={loading}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold text-sm rounded-lg transition-all flex items-center justify-center gap-2 whitespace-nowrap"
+              className="px-6 py-3 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-extrabold text-sm rounded-2xl transition-all flex items-center justify-center gap-2 whitespace-nowrap shadow-lg shadow-slate-900/10"
             >
-              <Search size={16} />
-              <span>Search</span>
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search size={16} />}
+              <span>{loading ? "Searching…" : "Search"}</span>
             </button>
           </div>
+          <p className="mt-3 text-xs text-slate-500 font-medium">
+            Tip: Press <span className="font-extrabold text-slate-700">Enter</span> to search quickly.
+          </p>
         </div>
 
         {/* Error Message */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6 mb-8">
-            <p className="text-red-700 font-medium">{error}</p>
+          <div className="mt-6 bg-rose-50 border border-rose-200 rounded-4xl p-5">
+            <p className="text-rose-800 font-extrabold text-sm">Couldn&apos;t fetch that word.</p>
+            <p className="text-rose-700 font-medium text-sm mt-1">{error}</p>
           </div>
         )}
 
         {/* Loading State */}
         {loading && (
-          <div className="bg-white rounded-lg border border-slate-200 p-6 text-center">
-            <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-blue-200 border-t-blue-600"></div>
-            <p className="text-slate-600 mt-2 text-sm">Fetching word definition...</p>
+          <div className="mt-6 bg-white/90 backdrop-blur rounded-4xl border border-slate-200 p-7 text-center shadow-sm">
+            <div className="inline-flex items-center justify-center h-12 w-12 rounded-3xl bg-slate-900/5 border border-slate-200">
+              <Loader2 className="w-6 h-6 animate-spin text-slate-700" />
+            </div>
+            <p className="text-slate-600 mt-3 text-sm font-medium">Fetching definition…</p>
           </div>
         )}
 
         {/* Word Definition Card */}
         {wordData && !loading && (
-          <div className="space-y-5">
+          <div className="mt-6 space-y-5">
             {/* Word Header */}
-            <div className="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
+            <div className="bg-white/90 backdrop-blur rounded-4xl border border-slate-200 p-6 shadow-sm">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
                 <div>
-                  <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-1">
+                  <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-1 tracking-tight">
                     {wordData.word}
                   </h2>
-                  {wordData.phonetic && (
-                    <p className="text-base text-blue-600 font-medium italic">
-                      {wordData.phonetic}
-                    </p>
-                  )}
+                  {resolvedPhonetic ? (
+                    <p className="text-base text-blue-700 font-semibold italic">{resolvedPhonetic}</p>
+                  ) : null}
                 </div>
                 {audioUrl && (
                   <button
                     onClick={playAudio}
-                    className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-all text-blue-600 font-semibold text-sm self-start sm:self-auto"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-2xl transition-all text-slate-900 font-extrabold text-sm self-start sm:self-auto"
+                    aria-label="Play pronunciation audio"
+                    title="Play pronunciation audio"
                   >
-                    <Speaker size={16} />
+                    <Volume2 size={16} className="text-blue-700" />
                     <span>Listen</span>
                   </button>
                 )}
               </div>
 
               {wordData.origin && (
-                <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 mt-3">
+                <div className="bg-slate-50 rounded-3xl p-4 border border-slate-100 mt-3">
                   <p className="text-xs font-semibold text-slate-700 mb-1 uppercase tracking-wider">Origin</p>
                   <p className="text-slate-700 text-sm leading-relaxed">{wordData.origin}</p>
                 </div>
@@ -191,11 +221,13 @@ export default function VocabularyPage() {
             {wordData.meanings && wordData.meanings.length > 0 && (
               <div className="grid md:grid-cols-2 gap-4">
                 {wordData.meanings.map((meaning, idx) => (
-                  <div key={idx} className="bg-white rounded-lg border border-slate-200 p-5 shadow-sm">
-                    <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-3 italic">
-                      {meaning.partOfSpeech}
-                      <div className="h-px grow bg-slate-200"></div>
-                    </h3>
+                  <div key={idx} className="bg-white/90 backdrop-blur rounded-4xl border border-slate-200 p-6 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <span className="px-3 py-1.5 rounded-full bg-slate-900 text-white text-xs font-extrabold capitalize">
+                        {meaning.partOfSpeech}
+                      </span>
+                      <div className="h-px grow bg-slate-200" />
+                    </div>
 
                     <div className="mt-3 space-y-3">
                       <div>
@@ -222,12 +254,17 @@ export default function VocabularyPage() {
                           <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Synonyms</h4>
                           <div className="flex flex-wrap gap-1">
                             {meaning.definitions[0].synonyms.map((syn, synIdx) => (
-                              <span
+                              <button
+                                type="button"
                                 key={synIdx}
-                                className="px-2 py-1 bg-blue-50 text-blue-600 border border-blue-200 rounded-full font-medium text-xs hover:bg-blue-100 transition-all cursor-pointer"
+                                onClick={() => {
+                                  setSearchTerm(syn);
+                                  handleSearch(syn);
+                                }}
+                                className="px-2.5 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full font-extrabold text-xs hover:bg-blue-100 transition-all"
                               >
                                 {syn}
-                              </span>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -238,12 +275,17 @@ export default function VocabularyPage() {
                           <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Antonyms</h4>
                           <div className="flex flex-wrap gap-1">
                             {meaning.definitions[0].antonyms.map((ant, antIdx) => (
-                              <span
+                              <button
+                                type="button"
                                 key={antIdx}
-                                className="px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded-full font-medium text-xs hover:bg-red-100 transition-all cursor-pointer"
+                                onClick={() => {
+                                  setSearchTerm(ant);
+                                  handleSearch(ant);
+                                }}
+                                className="px-2.5 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-full font-extrabold text-xs hover:bg-rose-100 transition-all"
                               >
                                 {ant}
-                              </span>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -255,68 +297,101 @@ export default function VocabularyPage() {
             )}
 
             {/* Related Links */}
-            <div className="bg-linear-to-r from-blue-50 to-emerald-50 rounded-lg p-5 border border-blue-200">
-              <p className="text-slate-700 mb-2 text-sm">Want to continue practicing?</p>
-              <Link
-                href="/practice"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-lg transition-all"
-              >
-                <span>Back to Practice Modules</span>
-                <ArrowRight size={14} />
-              </Link>
+            <div className="bg-linear-to-r from-blue-50 to-emerald-50 rounded-4xl p-6 border border-blue-200">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <p className="text-slate-900 font-extrabold text-sm">Keep the momentum.</p>
+                  <p className="text-slate-700/80 text-sm mt-1">
+                    Jump back to practice modules and apply today&apos;s new words.
+                  </p>
+                </div>
+                <Link
+                  href="/practice"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm rounded-2xl transition-all w-full sm:w-auto"
+                >
+                  <span>Go to practice</span>
+                  <ChevronRight size={16} />
+                </Link>
+              </div>
             </div>
           </div>
         )}
 
         {/* Empty State */}
         {!wordData && !loading && !error && (
-          <div className="bg-white rounded-lg border border-slate-200 p-6 text-center">
-            <div className="flex justify-center mb-3">
-              <div className="bg-blue-50 text-blue-600 p-2 rounded-lg border border-blue-100">
-                <BookOpen size={28} />
+          <div className="mt-6 bg-white/90 backdrop-blur rounded-4xl border border-slate-200 p-8 text-center shadow-sm">
+            <div className="flex justify-center mb-4">
+              <div className="bg-linear-to-br from-blue-50 to-indigo-50 text-blue-700 p-3 rounded-3xl border border-blue-100">
+                <BookOpen size={26} />
               </div>
             </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Start Your Vocabulary Journey</h3>
-            <p className="text-slate-600 max-w-md mx-auto leading-relaxed text-sm">
-              Search for any English word above to explore its definitions, pronunciation, examples, and synonyms. Perfect for IELTS preparation!
+            <h3 className="text-lg font-extrabold text-slate-900 mb-2">Search your first word</h3>
+            <p className="text-slate-600 max-w-md mx-auto leading-relaxed text-sm font-medium">
+              Try words like <span className="font-extrabold text-slate-800">analyze</span>,{" "}
+              <span className="font-extrabold text-slate-800">efficient</span>, or{" "}
+              <span className="font-extrabold text-slate-800">consequence</span>.
             </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              {["resilient", "coherent", "significant", "mitigate"].map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm(w);
+                    handleSearch(w);
+                  }}
+                  className="px-3 py-1.5 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-900 font-extrabold text-xs"
+                >
+                  {w}
+                </button>
+              ))}
+            </div>
           </div>
         )}
-      </div>
 
-      {/* Trust & Features Section */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="bg-white rounded-lg p-5 shadow-sm border border-slate-200">
-          <div className="grid md:grid-cols-3 gap-5 text-center divide-y md:divide-y-0 md:divide-x divide-slate-100">
-            <div className="p-2 transition-transform hover:scale-105">
-              <div className="flex justify-center mb-2">
-                <div className="bg-blue-50 text-blue-600 p-2 rounded-lg border border-blue-100 shadow-sm">
-                  <BookOpen size={20} />
-                </div>
-              </div>
-              <h4 className="text-xl font-extrabold text-slate-900 mb-1">500K+</h4>
-              <p className="text-slate-500 font-medium text-xs uppercase tracking-wider">Words Available</p>
-            </div>
-            <div className="p-2 transition-transform hover:scale-105">
-              <div className="flex justify-center mb-2">
-                <div className="bg-emerald-50 text-emerald-600 p-2 rounded-lg border border-emerald-100 shadow-sm">
-                  <Speaker size={20} />
-                </div>
-              </div>
-              <h4 className="text-xl font-extrabold text-slate-900 mb-1">Audio</h4>
-              <p className="text-slate-500 font-medium text-xs uppercase tracking-wider">Pronunciation Guides</p>
-            </div>
-            <div className="p-2 transition-transform hover:scale-105">
-              <div className="flex justify-center mb-2">
-                <div className="bg-purple-50 text-purple-600 p-2 rounded-lg border border-purple-100 shadow-sm">
-                  <ShieldCheck size={20} />
-                </div>
-              </div>
-              <h4 className="text-xl font-extrabold text-slate-900 mb-1">100%</h4>
-              <p className="text-slate-500 font-medium text-xs uppercase tracking-wider">Free Forever</p>
-            </div>
-          </div>
+        {/* Trust strip */}
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <StatCard
+            icon={<BookOpen className="w-5 h-5 text-blue-700" />}
+            title="500K+ words"
+            subtitle="Broad dictionary coverage"
+          />
+          <StatCard
+            icon={<Volume2 className="w-5 h-5 text-emerald-700" />}
+            title="Audio pronunciation"
+            subtitle="When available for the word"
+          />
+          <StatCard
+            icon={<ShieldCheck className="w-5 h-5 text-indigo-700" />}
+            title="Free to use"
+            subtitle="Fast lookups anytime"
+          />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div className="rounded-4xl border border-slate-200 bg-white/80 backdrop-blur p-5 shadow-sm">
+      <div className="flex items-center gap-3">
+        <div className="h-11 w-11 rounded-3xl border border-slate-200 bg-slate-50 flex items-center justify-center">
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-extrabold text-slate-900 truncate">{title}</p>
+          <p className="text-xs font-medium text-slate-600 mt-0.5 truncate">{subtitle}</p>
+        </div>
+        <BadgeCheck className="w-5 h-5 text-slate-300 ml-auto shrink-0" />
       </div>
     </div>
   );

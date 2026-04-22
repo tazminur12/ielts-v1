@@ -9,15 +9,12 @@ import {
   Menu,
   X,
   GraduationCap,
+  BookOpen,
   BarChart,
-  Package,
   CreditCard,
   ClipboardList,
   Image,
   Award,
-  PenTool,
-  Mic,
-  Bookmark,
   Gem,
   Search,
 } from 'lucide-react';
@@ -34,7 +31,13 @@ export default function Sidebar() {
 
   const commonLinks = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Profile', href: '/dashboard/students/profile', icon: Users },
+    {
+      name: 'Profile',
+      href: ['admin', 'super-admin', 'staff'].includes(role)
+        ? '/dashboard/profile'
+        : '/dashboard/students/profile',
+      icon: Users,
+    },
   ];
 
   const studentLinks = [
@@ -45,18 +48,7 @@ export default function Sidebar() {
       icon: ClipboardList,
     },
     { name: 'Results', href: '/dashboard/students/results', icon: Award },
-    {
-      name: 'Writing Feedback',
-      href: '/dashboard/students/feedback/writing',
-      icon: PenTool,
-    },
-    {
-      name: 'Speaking Feedback',
-      href: '/dashboard/students/feedback/speaking',
-      icon: Mic,
-    },
     { name: 'Progress', href: '/dashboard/progress', icon: BarChart },
-    { name: 'Saved Questions', href: '/dashboard/students/saved', icon: Bookmark },
     {
       name: 'Subscription',
       href: '/dashboard/students/subscription',
@@ -65,18 +57,14 @@ export default function Sidebar() {
   ];
 
   const staffAdminLinks = [
-    {
-      name: 'Assignments',
-      href: '/dashboard/assignments',
-      icon: ClipboardList,
-    },
-    { name: 'Products', href: '/dashboard/products', icon: Package },
     { name: 'Orders', href: '/dashboard/orders', icon: CreditCard },
     { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart },
   ];
 
   const adminLinks = [
     { name: 'Manage Users', href: '/dashboard/admin/users', icon: Users },
+    { name: 'Mock Tests', href: '/dashboard/admin/mock-tests', icon: GraduationCap },
+    { name: 'Practice Tests', href: '/dashboard/admin/practice-tests', icon: BookOpen },
     {
       name: 'Banner Management',
       href: '/dashboard/admin/banners',

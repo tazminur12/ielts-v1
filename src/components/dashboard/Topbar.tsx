@@ -30,7 +30,7 @@ export default function Topbar() {
   );
 
   // 🔥 Enter → navigate
-  const handleSearch = e => {
+  const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && filteredItems.length > 0) {
       router.push(filteredItems[0].href);
       setSearch('');
@@ -94,6 +94,8 @@ export default function Topbar() {
         <div className="relative">
           <button
             onClick={() => setShowNotifications(!showNotifications)}
+            aria-label="Notifications"
+            title="Notifications"
             className="p-2 rounded-full text-gray-500 hover:bg-gray-100 relative"
           >
             <Bell className="w-6 h-6" />

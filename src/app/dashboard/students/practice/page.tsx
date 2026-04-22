@@ -7,12 +7,11 @@ import {
   PenTool,
   Mic,
   ArrowRight,
-  FileText,
-  Clock,
-  BarChart,
-  ShieldCheck,
-  Target,
   CheckCircle2,
+  Clock,
+  FileText,
+  Sparkles,
+  Target,
 } from 'lucide-react';
 
 export default function PracticePage() {
@@ -27,8 +26,8 @@ export default function PracticePage() {
         'Detailed explanations',
         'Vocabulary builder',
       ],
-      color: 'hover:border-blue-300',
-      accent: 'bg-blue-50 text-blue-600 border-blue-200',
+      tone: 'from-blue-600 via-sky-600 to-indigo-600',
+      accent: 'bg-blue-50 text-blue-700 border-blue-200',
       link: '/practice/reading',
     },
     {
@@ -41,8 +40,8 @@ export default function PracticePage() {
         'Variable playback speed',
         'Note-taking tools',
       ],
-      color: 'hover:border-emerald-300',
-      accent: 'bg-emerald-50 text-emerald-600 border-emerald-200',
+      tone: 'from-emerald-600 via-teal-600 to-sky-600',
+      accent: 'bg-emerald-50 text-emerald-700 border-emerald-200',
       link: '/practice/listening',
     },
     {
@@ -51,8 +50,8 @@ export default function PracticePage() {
       description:
         'Master Task 1 and Task 2 with instant standard grading and detailed feedback.',
       features: ['Instant band score', 'Grammar correction', 'Model answers'],
-      color: 'hover:border-amber-300',
-      accent: 'bg-amber-50 text-amber-600 border-amber-200',
+      tone: 'from-amber-600 via-orange-600 to-rose-600',
+      accent: 'bg-amber-50 text-amber-800 border-amber-200',
       link: '/practice/writing',
     },
     {
@@ -65,146 +64,139 @@ export default function PracticePage() {
         'Pronunciation analysis',
         'Fluency tracking',
       ],
-      color: 'hover:border-rose-300',
-      accent: 'bg-rose-50 text-rose-600 border-rose-200',
+      tone: 'from-rose-600 via-fuchsia-600 to-indigo-600',
+      accent: 'bg-rose-50 text-rose-700 border-rose-200',
       link: '/practice/speaking',
     },
   ];
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] font-sans pb-20 mt-16 sm:mt-20">
-      {/* Official-looking Hero Section */}
-      <div className="bg-white border-b border-slate-200 pt-12 pb-8 px-4 sm:px-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-80 h-80 rounded-full bg-blue-50 blur-3xl pointer-events-none"></div>
-        <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-64 h-64 rounded-full bg-emerald-50 blur-3xl pointer-events-none"></div>
-
-        <div className="max-w-7xl mx-auto relative z-10 flex flex-col items-center text-center">
-          <div className="flex items-center justify-center gap-2 text-blue-600 font-semibold mb-2 text-xs uppercase tracking-wider">
-            <ShieldCheck size={14} />
-            <span>Official Practice Materials</span>
-          </div>
-          <h1 className="text-2xl md:text-4xl font-extrabold text-slate-900 mb-3 tracking-tight">
-            Comprehensive <span className="text-blue-600">IELTS Practice</span>
-          </h1>
-          <p className="text-sm md:text-base text-slate-600 max-w-2xl leading-relaxed mb-4">
-            Choose a module to begin. Our standard platform adapts to your level
-            and provides instant, actionable feedback to help you achieve your
-            target band score.
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Student dashboard
           </p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 mt-1">
+            Practice
+          </h1>
+          <p className="text-sm text-slate-600 mt-1 max-w-2xl">
+            Pick a module, practice with exam-style tasks, and improve your band score with consistent habits.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/practice"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-medium hover:bg-slate-50 transition-colors"
+          >
+            <FileText className="w-4 h-4 text-slate-500" />
+            Browse public practice
+          </Link>
+          <Link
+            href="/dashboard/mock-tests"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-linear-to-r from-indigo-600 via-sky-600 to-fuchsia-600 text-white text-sm font-semibold shadow-sm hover:from-indigo-700 hover:via-sky-700 hover:to-fuchsia-700 transition-colors"
+          >
+            <Sparkles className="w-4 h-4" />
+            Take a full mock
+          </Link>
+        </div>
+      </div>
 
-          <div className="flex flex-wrap justify-center gap-2 text-xs md:text-sm text-slate-700">
-            <div className="flex items-center gap-1.5 bg-slate-50 rounded-full px-3 py-1.5 border border-slate-200 shadow-sm">
-              <CheckCircle2 size={14} className="text-emerald-600" />
-              <span>Authentic Materials</span>
+      {/* Quick strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-slate-500">Focus</p>
+              <p className="text-lg font-bold text-slate-900 mt-1">Daily consistency</p>
+              <p className="text-xs text-slate-500 mt-2">
+                20–30 minutes per day beats cramming.
+              </p>
             </div>
-            <div className="flex items-center gap-1.5 bg-slate-50 rounded-full px-3 py-1.5 border border-slate-200 shadow-sm">
-              <Target size={14} className="text-blue-600" />
-              <span>Band Score Tracking</span>
+            <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <Target className="w-5 h-5 text-indigo-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-slate-500">Timing</p>
+              <p className="text-lg font-bold text-slate-900 mt-1">Exam-style practice</p>
+              <p className="text-xs text-slate-500 mt-2">
+                Build speed + accuracy with timed sets.
+              </p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-sky-50 flex items-center justify-center shrink-0">
+              <Clock className="w-5 h-5 text-sky-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-slate-500">Next</p>
+              <p className="text-lg font-bold text-slate-900 mt-1">Start a module</p>
+              <p className="text-xs text-slate-500 mt-2">
+                Choose Reading/Listening/Writing/Speaking.
+              </p>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        {/* Modules Grid */}
-        <div className="grid md:grid-cols-2 gap-6 lg:gap-8 mb-16">
-          {modules.map((module, index) => (
-            <Link
-              href={module.link}
-              key={index}
-              className={`group bg-white rounded-2xl border border-slate-200 p-8 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 flex flex-col ${module.color}`}
-            >
-              <div className="flex items-start gap-5 mb-6">
-                <div
-                  className={`p-4 rounded-xl border shadow-sm ${module.accent} transition-transform group-hover:scale-110`}
-                >
+      {/* Module cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+        {modules.map((module) => (
+          <Link
+            href={module.link}
+            key={module.link}
+            className="group rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-all overflow-hidden"
+          >
+            <div className={`h-1.5 w-full bg-linear-to-r ${module.tone}`} />
+            <div className="p-6 sm:p-7">
+              <div className="flex items-start gap-4">
+                <div className={`p-3.5 rounded-2xl border shadow-sm ${module.accent}`}>
                   {module.icon}
                 </div>
-                <div className="pt-1">
-                  <h3 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-blue-600 transition-colors">
+                <div className="min-w-0">
+                  <h3 className="text-xl font-extrabold text-slate-900 group-hover:text-indigo-700 transition-colors">
                     {module.title}
                   </h3>
-                  <p className="text-slate-600 text-sm leading-relaxed max-w-sm">
+                  <p className="text-sm text-slate-600 mt-1 leading-relaxed">
                     {module.description}
                   </p>
                 </div>
               </div>
 
-              <div className="bg-slate-50 rounded-xl p-5 mb-6 flex-grow border border-slate-100">
-                <ul className="space-y-3">
-                  {module.features.map((feature, idx) => (
-                    <li
-                      key={idx}
-                      className="flex items-center text-sm font-medium text-slate-600"
-                    >
-                      <CheckCircle2
-                        size={16}
-                        className="text-emerald-500 mr-3 shrink-0"
-                      />
-                      {feature}
+              <div className="mt-5 bg-slate-50 border border-slate-100 rounded-2xl p-4">
+                <ul className="space-y-2.5">
+                  {module.features.map((feature) => (
+                    <li key={feature} className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                      <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                      <span className="truncate">{feature}</span>
                     </li>
                   ))}
                 </ul>
               </div>
 
-              <div className="flex items-center justify-between pt-4 border-t border-slate-100 mt-auto">
-                <span className="text-sm font-bold text-slate-400 group-hover:text-blue-600 transition-colors uppercase tracking-wider">
-                  Start Module
+              <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Start now
                 </span>
-                <div className="w-10 h-10 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all">
+                <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-600 transition-all">
                   <ArrowRight size={18} />
                 </div>
               </div>
-            </Link>
-          ))}
-        </div>
-
-        {/* Stats / Trust Section */}
-        <div className="bg-white rounded-2xl p-8 lg:p-12 shadow-sm border border-slate-200 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-slate-50 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none"></div>
-
-          <div className="grid md:grid-cols-3 gap-8 text-center divide-y md:divide-y-0 md:divide-x divide-slate-100 relative z-10">
-            <div className="p-4 transition-transform hover:scale-105">
-              <div className="flex justify-center mb-5">
-                <div className="bg-blue-50 text-blue-600 p-3 rounded-xl border border-blue-100 shadow-sm">
-                  <FileText size={28} />
-                </div>
-              </div>
-              <h4 className="text-3xl font-extrabold text-slate-900 mb-2">
-                500+
-              </h4>
-              <p className="text-slate-500 font-medium text-sm uppercase tracking-wider">
-                Practice Tests
-              </p>
             </div>
-            <div className="p-4 transition-transform hover:scale-105">
-              <div className="flex justify-center mb-5">
-                <div className="bg-purple-50 text-purple-600 p-3 rounded-xl border border-purple-100 shadow-sm">
-                  <Clock size={28} />
-                </div>
-              </div>
-              <h4 className="text-3xl font-extrabold text-slate-900 mb-2">
-                24/7
-              </h4>
-              <p className="text-slate-500 font-medium text-sm uppercase tracking-wider">
-                Unlimited Access
-              </p>
-            </div>
-            <div className="p-4 transition-transform hover:scale-105">
-              <div className="flex justify-center mb-5">
-                <div className="bg-emerald-50 text-emerald-600 p-3 rounded-xl border border-emerald-100 shadow-sm">
-                  <BarChart size={28} />
-                </div>
-              </div>
-              <h4 className="text-3xl font-extrabold text-slate-900 mb-2">
-                94%
-              </h4>
-              <p className="text-slate-500 font-medium text-sm uppercase tracking-wider">
-                Success Rate
-              </p>
-            </div>
-          </div>
-        </div>
+          </Link>
+        ))}
       </div>
     </div>
   );
