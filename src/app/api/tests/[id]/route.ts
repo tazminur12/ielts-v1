@@ -6,6 +6,7 @@ import Test from "@/models/Test";
 import Section from "@/models/Section";
 import QuestionGroup from "@/models/QuestionGroup";
 import Question from "@/models/Question";
+import Plan from "@/models/Plan";
 
 // GET /api/tests/[id]  — full test with sections, groups, questions (NO correct answers)
 export async function GET(
@@ -14,10 +15,6 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ message: "Please login to access tests" }, { status: 401 });
-    }
-
     await connectDB();
     const { id } = await params;
 
@@ -27,6 +24,18 @@ export async function GET(
 
     if (!test) {
       return NextResponse.json({ message: "Test not found" }, { status: 404 });
+    }
+
+    // Guests can only load tests available on the lowest (free) plan.
+    if (!session) {
+      const freePlan = await Plan.findOne({ isActive: true })
+        .sort({ displayOrder: 1 })
+        .select("slug")
+        .lean() as { slug: string } | null;
+      const freeSlug = freePlan?.slug ?? "free";
+      if (String(test.accessLevel) !== String(freeSlug)) {
+        return NextResponse.json({ message: "Please login to access this test" }, { status: 401 });
+      }
     }
 
     const sections = await Section.find({ testId: id })

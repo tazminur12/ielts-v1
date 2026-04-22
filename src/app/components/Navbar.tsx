@@ -163,7 +163,7 @@ const Navbar = () => {
                     Login
                   </Link>
                   <Link
-                    href="/start-mock"
+                    href="/get-free"
                     className="px-6 py-3 bg-slate-900 text-white font-bold text-sm rounded-2xl hover:bg-blue-600 shadow-lg shadow-slate-200 hover:shadow-blue-100 transition-all"
                   >
                     Get Started Free
@@ -275,7 +275,7 @@ const Navbar = () => {
                       Login
                     </Link>
                     <Link
-                      href="/start-mock"
+                      href="/get-free"
                       onClick={() => setIsMobileMenuOpen(false)}
                       className="block w-full py-4 text-center font-bold bg-blue-600 text-white rounded-2xl shadow-lg shadow-blue-100"
                     >

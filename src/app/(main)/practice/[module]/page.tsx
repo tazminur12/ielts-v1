@@ -23,6 +23,8 @@ interface Test {
   examType: string;
 }
 
+type PlanMeta = { name: string; isPremium: boolean; displayOrder: number };
+
 const MODULE_LABELS: Record<string, string> = {
   listening: "Listening",
   reading: "Reading",
@@ -77,6 +79,7 @@ export default function PracticeModulePage() {
   
   const [tests, setTests] = useState<Test[]>([]);
   const [accessibleSlugs, setAccessibleSlugs] = useState<string[]>([]);
+  const [plansBySlug, setPlansBySlug] = useState<Record<string, PlanMeta>>({});
   const [filter, setFilter] = useState("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -100,6 +103,7 @@ export default function PracticeModulePage() {
       const data = await res.json();
       setTests(data.tests || []);
       setAccessibleSlugs(data.accessibleSlugs || []);
+      setPlansBySlug(data.plansBySlug || {});
       setPagination(data.pagination || { total: 0, pages: 1, page: 1 });
     } catch (e: any) {
       setError(e.message || "Something went wrong");
@@ -112,9 +116,27 @@ export default function PracticeModulePage() {
     if (moduleSlug) {
       fetchTests(1, filter);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, moduleSlug]);
 
-  const isUnlocked = (test: Test) => accessibleSlugs.includes(test.accessLevel);
+  const isUnlocked = (test: Test) =>
+    accessibleSlugs.includes(test.accessLevel) || test.accessLevel === "free";
+
+  const prettyPlanSlug = (slug: string) =>
+    String(slug || "")
+      .replace(/[-_]+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+
+  const planLabel = (slug: string) => plansBySlug[slug]?.name || prettyPlanSlug(slug) || "Plan";
+  const planTone = (slug: string) => {
+    const isFree = slug === "free";
+    if (isFree) return "bg-emerald-50 text-emerald-800 border-emerald-200";
+    const premium = plansBySlug[slug]?.isPremium;
+    return premium
+      ? "bg-amber-50 text-amber-900 border-amber-200"
+      : "bg-slate-50 text-slate-700 border-slate-200";
+  };
 
   const TYPE_FILTERS = ["All", "Academic", "General"];
 
@@ -177,48 +199,70 @@ export default function PracticeModulePage() {
 
         {/* Test Grid */}
         {!error && (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-7 lg:gap-8">
             {loading
               ? Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)
               : tests.map((test) => {
                   const unlocked = isUnlocked(test);
+                  const plan = test.accessLevel || "free";
+                  const planName = planLabel(plan);
                   return (
                     <div
                       key={test._id}
-                      className="group bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden hover:-translate-y-1"
+                      className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:shadow-2xl hover:-translate-y-0.5"
                     >
+                      {/* Brand gradient ribbon */}
+                      <div
+                        className={`h-1.5 w-full ${
+                          unlocked
+                            ? "bg-linear-to-r from-sky-500 via-indigo-500 to-fuchsia-500"
+                            : "bg-linear-to-r from-slate-200 via-slate-300 to-slate-200"
+                        }`}
+                      />
+
+                      {/* Status Badges */}
+                      <div className="absolute top-5 right-5 z-10 flex gap-2">
+                        <span
+                          className={`px-3 py-1.5 rounded-xl border text-[11px] font-extrabold tracking-wide shadow-sm backdrop-blur bg-white/80 ${planTone(
+                            plan
+                          )}`}
+                        >
+                          {planName}
+                        </span>
+                        {!unlocked && (
+                          <div className="bg-white/90 backdrop-blur shadow-sm p-1.5 rounded-xl border border-slate-200 text-slate-500">
+                            <Lock size={14} />
+                          </div>
+                        )}
+                      </div>
+
                       {/* Card Header */}
-                      <div className="p-6 pb-4">
+                      <div className="p-6 sm:p-7 pb-4">
                         <div className="flex justify-between items-start mb-4">
                           <div className="flex flex-wrap gap-2">
                             {test.type && (
-                              <span className="px-2 py-1 bg-blue-50 text-blue-600 text-[10px] font-bold uppercase tracking-wider rounded">
+                              <span className="px-3 py-1.5 bg-linear-to-r from-indigo-600 to-sky-600 text-white text-[10px] font-extrabold uppercase tracking-wider rounded-xl shadow-sm">
                                 {test.type}
                               </span>
                             )}
                             {(test.tags || []).map((tag) => (
                               <span
                                 key={tag}
-                                className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wider rounded"
+                                className="px-3 py-1.5 bg-slate-50 text-slate-700 text-[10px] font-bold uppercase tracking-wider rounded-xl border border-slate-200"
                               >
                                 {tag}
                               </span>
                             ))}
                           </div>
-                          {!unlocked && (
-                            <span className="bg-amber-100 text-amber-700 p-1.5 rounded-lg shrink-0">
-                              <Lock size={14} />
-                            </span>
-                          )}
                         </div>
 
-                        <h3 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-blue-600 transition-colors line-clamp-2">
+                        <h3 className="text-[20px] sm:text-[22px] font-extrabold text-slate-900 mb-2 transition-colors line-clamp-2 leading-tight">
                           {test.title}
                         </h3>
 
                         <div className="flex items-center gap-4 text-sm text-slate-500 mb-1">
                           <div className="flex items-center gap-1">
-                            <Clock size={14} />
+                            <Clock size={14} className="text-sky-500" />
                             {formatDuration(test.duration)}
                           </div>
                           {test.difficulty && (
@@ -228,14 +272,14 @@ export default function PracticeModulePage() {
                             </div>
                           )}
                           <div className="flex items-center gap-1 text-slate-400">
-                            <BookOpen size={14} />
+                            <BookOpen size={14} className="text-indigo-500" />
                             {MODULE_LABELS[test.module] ?? test.module}
                           </div>
                         </div>
                       </div>
 
                       {/* Stats Row */}
-                      <div className="px-6 py-3 bg-slate-50 border-t border-b border-slate-100 flex justify-between items-center text-xs font-medium text-slate-500">
+                      <div className="px-6 sm:px-7 py-3 bg-slate-50 border-t border-b border-slate-100 flex justify-between items-center text-xs font-medium text-slate-500">
                         <div className="flex items-center gap-1 text-yellow-500">
                           <Star size={14} fill="currentColor" />
                           <span className="text-slate-700">
@@ -248,21 +292,32 @@ export default function PracticeModulePage() {
                       </div>
 
                       {/* Action Footer */}
-                      <div className="p-6 mt-auto">
+                      <div className="p-6 sm:p-7 mt-auto">
                         {unlocked ? (
                           <Link
                             href={`/exam?testId=${test._id}&mode=practice`}
-                            className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all"
+                            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-extrabold transition-all group-hover:shadow-lg text-white bg-linear-to-r from-indigo-600 via-sky-600 to-fuchsia-600 hover:from-indigo-700 hover:via-sky-700 hover:to-fuchsia-700"
                           >
                             <PlayCircle size={18} /> Start Practice
                           </Link>
                         ) : (
-                          <Link
-                            href="/pricing"
-                            className="w-full flex items-center justify-center gap-2 py-3 bg-white border-2 border-slate-200 hover:border-blue-600 text-slate-700 hover:text-blue-600 font-bold rounded-xl transition-all"
-                          >
-                            <Lock size={16} /> Unlock Premium
-                          </Link>
+                          <div className="space-y-2">
+                            <Link
+                              href={`/login?redirect=${encodeURIComponent(`/exam?testId=${test._id}&mode=practice`)}`}
+                              className="bg-white border-2 border-slate-200 hover:border-indigo-300 hover:text-indigo-700 text-slate-700 w-full py-3.5 rounded-2xl font-extrabold flex items-center justify-center gap-2 transition-all hover:bg-indigo-50/40"
+                            >
+                              <Lock size={16} /> Login to unlock
+                            </Link>
+                            <p className="text-center text-xs font-semibold text-slate-500">
+                              Requires <span className="text-slate-700">{planName}</span>
+                            </p>
+                            <Link
+                              href="/pricing"
+                              className="w-full inline-flex items-center justify-center text-sm font-bold text-indigo-700 hover:text-indigo-800 hover:underline"
+                            >
+                              See plans & pricing
+                            </Link>
+                          </div>
                         )}
                       </div>
                     </div>

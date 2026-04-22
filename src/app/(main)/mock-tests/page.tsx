@@ -22,6 +22,8 @@ interface Test {
   examType: string;
 }
 
+type PlanMeta = { name: string; isPremium: boolean; displayOrder: number };
+
 const MODULE_LABELS: Record<string, string> = {
   listening: "Listening",
   reading: "Reading",
@@ -71,22 +73,22 @@ function CardSkeleton() {
 export default function MockTestsPage() {
   const [tests, setTests] = useState<Test[]>([]);
   const [accessibleSlugs, setAccessibleSlugs] = useState<string[]>([]);
-  const [filter, setFilter] = useState("All");
+  const [plansBySlug, setPlansBySlug] = useState<Record<string, PlanMeta>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pagination, setPagination] = useState({ total: 0, pages: 1, page: 1 });
 
-  const fetchTests = async (page = 1, moduleFilter = "") => {
+  const fetchTests = async (page = 1) => {
     setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ examType: "mock", page: String(page), limit: "12" });
-      if (moduleFilter && moduleFilter !== "All") params.set("module", moduleFilter.toLowerCase().replace(" ", ""));
       const res = await fetch(`/api/tests?${params}`);
       if (!res.ok) throw new Error("Failed to load tests");
       const data = await res.json();
       setTests(data.tests || []);
       setAccessibleSlugs(data.accessibleSlugs || []);
+      setPlansBySlug(data.plansBySlug || {});
       setPagination(data.pagination || { total: 0, pages: 1, page: 1 });
     } catch (e: any) {
       setError(e.message || "Something went wrong");
@@ -96,12 +98,26 @@ export default function MockTestsPage() {
   };
 
   useEffect(() => {
-    fetchTests(1, filter);
-  }, [filter]);
+    fetchTests(1);
+  }, []);
 
   const isUnlocked = (test: Test) => accessibleSlugs.includes(test.accessLevel) || test.accessLevel === "free";
 
-  const TYPE_FILTERS = ["All", "Listening", "Reading", "Writing", "Speaking"];
+  const prettyPlanSlug = (slug: string) =>
+    String(slug || "")
+      .replace(/[-_]+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+
+  const planLabel = (slug: string) => plansBySlug[slug]?.name || prettyPlanSlug(slug) || "Plan";
+  const planTone = (slug: string) => {
+    const isFree = slug === "free";
+    if (isFree) return "bg-emerald-50 text-emerald-800 border-emerald-200";
+    const premium = plansBySlug[slug]?.isPremium;
+    return premium
+      ? "bg-amber-50 text-amber-900 border-amber-200"
+      : "bg-slate-50 text-slate-700 border-slate-200";
+  };
 
   return (
     <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
@@ -136,35 +152,12 @@ export default function MockTestsPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Modern Filter Bar */}
-        <div className="bg-white rounded-2xl p-2 sm:p-4 shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between items-center mb-10 gap-4">
-          <div className="flex items-center space-x-2 overflow-x-auto w-full sm:w-auto scrollbar-hide">
-            {TYPE_FILTERS.map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
-                  filter === f
-                    ? "bg-[#0f172a] text-white shadow-md"
-                    : "bg-transparent text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2 text-sm font-medium text-slate-500 bg-slate-50 px-4 py-2 rounded-xl">
-            <Filter size={16} />
-            <span>Showing {pagination.total} high-quality tests</span>
-          </div>
-        </div>
-
         {/* Error State */}
         {error && (
           <div className="mx-auto max-w-md bg-red-50 border border-red-200 text-center py-8 px-4 rounded-2xl">
             <p className="text-red-600 font-medium mb-3">{error}</p>
             <button
-              onClick={() => fetchTests(1, filter)}
+              onClick={() => fetchTests(1)}
               className="px-6 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition"
             >
               Try again
@@ -174,7 +167,7 @@ export default function MockTestsPage() {
 
         {/* High-End Test Grid */}
         {!error && (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-7 lg:gap-8">
             {loading
               ? Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)
               : tests.map((test) => {
@@ -182,44 +175,59 @@ export default function MockTestsPage() {
                   const difficultyColor = test.difficulty 
                     ? DIFFICULTY_COLORS[test.difficulty.toLowerCase()] || "text-slate-600 bg-slate-50 border-slate-200"
                     : "text-slate-600 bg-slate-50 border-slate-200";
+                  const plan = test.accessLevel || "free";
+                  const planName = planLabel(plan);
 
                   return (
                     <div
                       key={test._id}
-                      className="group bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all duration-300 flex flex-col overflow-hidden relative"
+                      className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:shadow-2xl hover:-translate-y-0.5"
                     >
-                      {/* Top Accent Line */}
-                      <div className={`h-1.5 w-full ${unlocked ? 'bg-blue-600' : 'bg-slate-300'}`} />
+                      {/* Brand gradient ribbon */}
+                      <div
+                        className={`h-1.5 w-full ${
+                          unlocked
+                            ? "bg-linear-to-r from-sky-500 via-indigo-500 to-fuchsia-500"
+                            : "bg-linear-to-r from-slate-200 via-slate-300 to-slate-200"
+                        }`}
+                      />
                       
                       {/* Status Badges */}
                       <div className="absolute top-5 right-5 z-10 flex gap-2">
+                        <span
+                          className={`px-3 py-1.5 rounded-xl border text-[11px] font-extrabold tracking-wide shadow-sm backdrop-blur bg-white/80 ${planTone(
+                            plan
+                          )}`}
+                        >
+                          {planName}
+                        </span>
                         {!unlocked && (
-                          <div className="bg-white/90 backdrop-blur shadow-sm p-1.5 rounded-lg border border-slate-200 text-slate-500">
+                          <div className="bg-white/90 backdrop-blur shadow-sm p-1.5 rounded-xl border border-slate-200 text-slate-500">
                             <Lock size={14} />
                           </div>
                         )}
                       </div>
 
-                      <div className="p-6 pb-2 grow">
-                        <div className="flex flex-wrap gap-2 mb-4">
-                          <span className="px-3 py-1 bg-[#f0f4ff] text-blue-700 text-xs font-bold uppercase tracking-wider rounded-md">
+                      <div className="p-6 sm:p-7 pb-2 grow">
+                        <div className="flex flex-wrap gap-2 mb-4 items-center">
+                          <span className="px-3 py-1.5 bg-linear-to-r from-indigo-600 to-sky-600 text-white text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-sm">
                             {MODULE_LABELS[test.module] ?? test.module}
                           </span>
                           {test.type && (
-                            <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold uppercase tracking-wider rounded-md">
+                            <span className="px-3 py-1.5 bg-slate-50 text-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl border border-slate-200">
                               {test.type}
                             </span>
                           )}
                         </div>
 
-                        <h3 className="text-xl font-extrabold text-[#0f172a] mb-4 group-hover:text-blue-600 transition-colors line-clamp-2 leading-tight">
+                        <h3 className="text-[20px] sm:text-[22px] font-extrabold text-slate-900 mb-4 transition-colors line-clamp-2 leading-tight">
                           {test.title}
                         </h3>
 
                         {/* Test Meta Info */}
                         <div className="grid grid-cols-2 gap-y-3 font-medium text-slate-600 text-sm mb-6">
                           <div className="flex items-center gap-2">
-                            <Clock size={16} className="text-slate-400" />
+                            <Clock size={16} className="text-sky-500" />
                             {formatDuration(test.duration)}
                           </div>
                           {test.difficulty && (
@@ -236,31 +244,42 @@ export default function MockTestsPage() {
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <BookOpen size={16} className="text-slate-400" />
+                            <BookOpen size={16} className="text-indigo-500" />
                             {test.totalQuestions ? `${test.totalQuestions} Qs` : "Standard"}
                           </div>
                         </div>
                       </div>
 
                       {/* Action Area */}
-                      <div className="p-6 pt-0 mt-auto">
+                      <div className="p-6 sm:p-7 pt-0 mt-auto">
                         <div className="h-px w-full bg-slate-100 mb-4"></div>
                         {unlocked ? (
                           <Link
                             href={`/exam?testId=${test._id}`}
-                            className="bg-[#0f172a] hover:bg-blue-600 text-white w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all group-hover:shadow-md"
+                            className="w-full py-3.5 rounded-2xl font-extrabold flex items-center justify-center gap-2 transition-all group-hover:shadow-lg text-white bg-linear-to-r from-indigo-600 via-sky-600 to-fuchsia-600 hover:from-indigo-700 hover:via-sky-700 hover:to-fuchsia-700"
                           >
                             <PlayCircle size={20} />
-                            Start Examination
+                            Start test
                           </Link>
                         ) : (
-                          <Link
-                            href="/pricing"
-                            className="bg-white border-2 border-slate-200 hover:border-[#0f172a] hover:text-[#0f172a] text-slate-600 w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all"
-                          >
-                            <Lock size={18} />
-                            Unlock Premium Test
-                          </Link>
+                          <div className="space-y-2">
+                            <Link
+                              href={`/login?redirect=${encodeURIComponent(`/exam?testId=${test._id}`)}`}
+                              className="bg-white border-2 border-slate-200 hover:border-indigo-300 hover:text-indigo-700 text-slate-700 w-full py-3.5 rounded-2xl font-extrabold flex items-center justify-center gap-2 transition-all hover:bg-indigo-50/40"
+                            >
+                              <Lock size={18} />
+                              Login to unlock
+                            </Link>
+                            <p className="text-center text-xs font-semibold text-slate-500">
+                              Requires <span className="text-slate-700">{planName}</span>
+                            </p>
+                            <Link
+                              href="/pricing"
+                              className="w-full inline-flex items-center justify-center text-sm font-bold text-indigo-700 hover:text-indigo-800 hover:underline"
+                            >
+                              See plans & pricing
+                            </Link>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -287,7 +306,7 @@ export default function MockTestsPage() {
               <button
                 title="Previous page"
                 disabled={pagination.page <= 1}
-                onClick={() => fetchTests(pagination.page - 1, filter)}
+                onClick={() => fetchTests(pagination.page - 1)}
                 className="p-2 sm:px-4 sm:py-2 text-sm font-semibold rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 disabled:opacity-40 disabled:hover:bg-transparent"
               >
                 <span className="hidden sm:inline">Previous</span>
@@ -298,7 +317,7 @@ export default function MockTestsPage() {
                 {Array.from({ length: pagination.pages }, (_, i) => i + 1).map((p) => (
                   <button
                     key={p}
-                    onClick={() => fetchTests(p, filter)}
+                    onClick={() => fetchTests(p)}
                     className={`w-10 h-10 rounded-lg text-sm font-bold transition-all ${
                       p === pagination.page
                         ? "bg-blue-600 text-white shadow-md"
@@ -313,7 +332,7 @@ export default function MockTestsPage() {
               <button
                 title="Next page"
                 disabled={pagination.page >= pagination.pages}
-                onClick={() => fetchTests(pagination.page + 1, filter)}
+                onClick={() => fetchTests(pagination.page + 1)}
                 className="p-2 sm:px-4 sm:py-2 text-sm font-semibold rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 disabled:opacity-40 disabled:hover:bg-transparent"
               >
                 <span className="hidden sm:inline">Next</span>

@@ -6,7 +6,7 @@ import Test from "@/models/Test";
 import Subscription from "@/models/Subscription";
 import Plan from "@/models/Plan";
 
-// GET /api/tests  — public list of published tests (filtered by plan access)
+// GET /api/tests  — public list of published tests (with access metadata)
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
     }
 
     // If no accessible slugs (not logged in or no subscription),
-    // only show tests whose accessLevel matches the lowest-order plan (free)
+    // access falls back to the lowest-order plan (free)
     if (accessibleSlugs.length === 0) {
       const freePlan = await Plan.findOne({ isActive: true })
         .sort({ displayOrder: 1 })
@@ -58,7 +58,21 @@ export async function GET(req: NextRequest) {
       accessibleSlugs = freePlan ? [freePlan.slug] : ["free"];
     }
 
-    filter.accessLevel = { $in: accessibleSlugs };
+    const plans = await Plan.find({ isActive: true })
+      .select("slug name isPremium displayOrder")
+      .lean() as { slug: string; name: string; isPremium?: boolean; displayOrder?: number }[];
+
+    const plansBySlug = plans.reduce<Record<string, { name: string; isPremium: boolean; displayOrder: number }>>(
+      (acc, p) => {
+        acc[p.slug] = {
+          name: p.name,
+          isPremium: Boolean(p.isPremium),
+          displayOrder: Number(p.displayOrder ?? 0),
+        };
+        return acc;
+      },
+      {}
+    );
 
     const [tests, total] = await Promise.all([
       Test.find(filter)
@@ -74,6 +88,7 @@ export async function GET(req: NextRequest) {
       tests,
       pagination: { total, page, limit, pages: Math.ceil(total / limit) },
       accessibleSlugs, // send to client so it can show lock/unlock correctly
+      plansBySlug,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error";

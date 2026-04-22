@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useExam } from "@/components/exam/ExamContext";
 
 export default function ReadingPage() {
-  const { startExam, currentQuestion, setCurrentQuestion } = useExam();
+  const { startExam, currentQuestion } = useExam();
   const rightPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

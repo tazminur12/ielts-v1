@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useExam } from "@/components/exam/ExamContext";
 import { AudioPlayer } from "@/components/exam/AudioPlayer";
 
 export default function ListeningPage() {
   const { startExam, currentQuestion, setCurrentQuestion } = useExam();
   const [section, setSection] = useState(1);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     startExam("listening", 30 * 60, 40);
