@@ -6,7 +6,6 @@ import {
   Award,
   Calendar,
   BarChart3,
-  BookOpen,
   ExternalLink,
   Filter,
   Loader2,

@@ -19,7 +19,6 @@ import {
   Sparkles,
   Target,
   TriangleAlert,
-  Upload,
   X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
