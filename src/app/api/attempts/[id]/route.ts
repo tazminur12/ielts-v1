@@ -24,7 +24,7 @@ export async function GET(
     const attempt = await Attempt.findOne(
       session?.user?.id ? { _id: id, userId: session.user.id } : { _id: id, guestId }
     )
-      .populate("testId", "title module examType duration totalQuestions")
+      .populate("testId", "title module examType duration totalQuestions accessLevel")
       .lean();
 
     if (!attempt) return NextResponse.json({ message: "Not found" }, { status: 404 });

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import {
   Clock, Lock, PlayCircle, Star,
   Filter, ChevronLeft, ChevronRight, BookOpen, CheckCircle2, ShieldCheck, Target
@@ -71,6 +72,7 @@ function CardSkeleton() {
 }
 
 export default function MockTestsPage() {
+  const { data: session } = useSession();
   const [tests, setTests] = useState<Test[]>([]);
   const [accessibleSlugs, setAccessibleSlugs] = useState<string[]>([]);
   const [plansBySlug, setPlansBySlug] = useState<Record<string, PlanMeta>>({});
@@ -83,9 +85,11 @@ export default function MockTestsPage() {
     setError("");
     try {
       const params = new URLSearchParams({ examType: "mock", page: String(page), limit: "12" });
-      const res = await fetch(`/api/tests?${params}`);
-      if (!res.ok) throw new Error("Failed to load tests");
-      const data = await res.json();
+      const res = await fetch(`/api/tests?${params}`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.message || data?.error || "Failed to load tests");
+      }
       setTests(data.tests || []);
       setAccessibleSlugs(data.accessibleSlugs || []);
       setPlansBySlug(data.plansBySlug || {});
@@ -118,6 +122,8 @@ export default function MockTestsPage() {
       ? "bg-amber-50 text-amber-900 border-amber-200"
       : "bg-slate-50 text-slate-700 border-slate-200";
   };
+
+  const isLoggedIn = !!session?.user;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
@@ -167,7 +173,7 @@ export default function MockTestsPage() {
 
         {/* High-End Test Grid */}
         {!error && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-7 lg:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-7 lg:gap-8 items-start">
             {loading
               ? Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)
               : tests.map((test) => {
@@ -192,32 +198,33 @@ export default function MockTestsPage() {
                         }`}
                       />
                       
-                      {/* Status Badges */}
-                      <div className="absolute top-5 right-5 z-10 flex gap-2">
-                        <span
-                          className={`px-3 py-1.5 rounded-xl border text-[11px] font-extrabold tracking-wide shadow-sm backdrop-blur bg-white/80 ${planTone(
-                            plan
-                          )}`}
-                        >
-                          {planName}
-                        </span>
-                        {!unlocked && (
-                          <div className="bg-white/90 backdrop-blur shadow-sm p-1.5 rounded-xl border border-slate-200 text-slate-500">
-                            <Lock size={14} />
-                          </div>
-                        )}
-                      </div>
-
                       <div className="p-6 sm:p-7 pb-2 grow">
-                        <div className="flex flex-wrap gap-2 mb-4 items-center">
-                          <span className="px-3 py-1.5 bg-linear-to-r from-indigo-600 to-sky-600 text-white text-xs font-extrabold uppercase tracking-wider rounded-xl shadow-sm">
+                        <div className="flex items-center justify-between gap-2 mb-4">
+                          <div className="flex flex-1 min-w-0 flex-wrap items-center gap-2 min-h-[32px]">
+                            <span className="px-3 py-1.5 bg-linear-to-r from-indigo-600 to-sky-600 text-white text-xs font-extrabold uppercase tracking-wider whitespace-nowrap rounded-xl shadow-sm">
                             {MODULE_LABELS[test.module] ?? test.module}
                           </span>
                           {test.type && (
-                            <span className="px-3 py-1.5 bg-slate-50 text-slate-700 text-xs font-bold uppercase tracking-wider rounded-xl border border-slate-200">
+                            <span className="px-3 py-1.5 bg-slate-50 text-slate-700 text-xs font-bold uppercase tracking-wider whitespace-nowrap max-w-40 truncate rounded-xl border border-slate-200">
                               {test.type}
                             </span>
                           )}
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span
+                              className={`px-3 py-1.5 rounded-xl border text-[11px] font-extrabold tracking-wide shadow-sm backdrop-blur bg-white/80 whitespace-nowrap ${planTone(
+                                plan
+                              )}`}
+                            >
+                              {planName}
+                            </span>
+                            {!unlocked && (
+                              <div className="bg-white/90 backdrop-blur shadow-sm p-1.5 rounded-xl border border-slate-200 text-slate-500">
+                                <Lock size={14} />
+                              </div>
+                            )}
+                          </div>
                         </div>
 
                         <h3 className="text-[20px] sm:text-[22px] font-extrabold text-slate-900 mb-4 transition-colors line-clamp-2 leading-tight">
@@ -263,13 +270,23 @@ export default function MockTestsPage() {
                           </Link>
                         ) : (
                           <div className="space-y-2">
-                            <Link
-                              href={`/login?redirect=${encodeURIComponent(`/exam?testId=${test._id}`)}`}
-                              className="bg-white border-2 border-slate-200 hover:border-indigo-300 hover:text-indigo-700 text-slate-700 w-full py-3.5 rounded-2xl font-extrabold flex items-center justify-center gap-2 transition-all hover:bg-indigo-50/40"
-                            >
-                              <Lock size={18} />
-                              Login to unlock
-                            </Link>
+                            {isLoggedIn ? (
+                              <Link
+                                href="/pricing"
+                                className="w-full py-3.5 rounded-2xl font-extrabold flex items-center justify-center gap-2 transition-all group-hover:shadow-lg text-white bg-linear-to-r from-indigo-600 via-sky-600 to-fuchsia-600 hover:from-indigo-700 hover:via-sky-700 hover:to-fuchsia-700"
+                              >
+                                <CheckCircle2 size={18} />
+                                Upgrade to unlock
+                              </Link>
+                            ) : (
+                              <Link
+                                href={`/login?redirect=${encodeURIComponent(`/exam?testId=${test._id}`)}`}
+                                className="bg-white border-2 border-slate-200 hover:border-indigo-300 hover:text-indigo-700 text-slate-700 w-full py-3.5 rounded-2xl font-extrabold flex items-center justify-center gap-2 transition-all hover:bg-indigo-50/40"
+                              >
+                                <Lock size={18} />
+                                Login to unlock
+                              </Link>
+                            )}
                             <p className="text-center text-xs font-semibold text-slate-500">
                               Requires <span className="text-slate-700">{planName}</span>
                             </p>

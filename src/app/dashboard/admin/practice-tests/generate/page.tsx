@@ -204,7 +204,7 @@ export default function GenerateAITestPage() {
         label="practice test"
         variant="practice"
       />
-      <div className="max-w-4xl mx-auto space-y-6 pb-12">
+      <div className="max-w-6xl mx-auto space-y-6 pb-12 px-4 sm:px-6">
       <div className="flex items-center gap-4">
         <Link
           href="/dashboard/admin/practice-tests"
@@ -223,8 +223,8 @@ export default function GenerateAITestPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-8 space-y-6">
           <form
             onSubmit={handleGenerate}
             className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-8"
@@ -375,7 +375,7 @@ export default function GenerateAITestPage() {
           </form>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 lg:col-span-4">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-6">
             <h3 className="font-bold text-gray-900 flex items-center gap-2 border-b border-gray-100 pb-3">
               <Settings className="text-gray-400 w-5 h-5" />

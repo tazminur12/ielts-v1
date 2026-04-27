@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Plus,
   Edit,
   Trash2,
   Eye,
-  EyeOff,
   DollarSign,
   Package,
   Loader2,
@@ -46,6 +45,7 @@ export default function AdminPlansPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
+  const [activeTab, setActiveTab] = useState<"active" | "archived">("active");
 
   useEffect(() => {
     fetchPlans();
@@ -53,7 +53,7 @@ export default function AdminPlansPage() {
 
   const fetchPlans = async () => {
     try {
-      const response = await fetch("/api/plans");
+      const response = await fetch("/api/plans?includeInactive=1");
       const data = await response.json();
       if (data.success) {
         setPlans(data.data);
@@ -78,28 +78,65 @@ export default function AdminPlansPage() {
   const handleDeletePlan = async (planId: string, planName: string) => {
     const result = await Swal.fire({
       title: "Delete Plan?",
-      text: `Are you sure you want to delete "${planName}"?`,
+      text: `This will archive "${planName}" (it will be deactivated and hidden from student pricing).`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#dc2626",
       cancelButtonColor: "#6b7280",
-      confirmButtonText: "Yes, delete it!",
+      confirmButtonText: "Yes, archive it!",
     });
 
     if (result.isConfirmed) {
       try {
         const plan = plans.find((p) => p._id === planId);
+        if (!plan?.slug) throw new Error("Plan slug missing");
         const response = await fetch(`/api/plans/${plan?.slug}`, {
           method: "DELETE",
         });
 
-        if (response.ok) {
-          Swal.fire("Deleted!", "Plan has been deleted.", "success");
-          fetchPlans();
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || data?.success === false) {
+          throw new Error(data?.error || "Failed to delete plan");
         }
+
+        // Since "delete" is a soft delete (isActive=false), remove it from this table for clarity.
+        setPlans((prev) => prev.filter((p) => p._id !== planId));
+        Swal.fire("Archived!", "Plan has been archived.", "success");
       } catch (error) {
         Swal.fire("Error!", "Failed to delete plan.", "error");
       }
+    }
+  };
+
+  const handleHardDeletePlan = async (planId: string, planName: string) => {
+    const result = await Swal.fire({
+      title: "Permanently delete plan?",
+      text: `This will permanently delete "${planName}". This cannot be undone.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#6b7280",
+      confirmButtonText: "Yes, delete permanently",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const plan = plans.find((p) => p._id === planId);
+      if (!plan?.slug) throw new Error("Plan slug missing");
+
+      const response = await fetch(`/api/plans/${plan.slug}?hard=1`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.error || "Failed to permanently delete plan");
+      }
+
+      setPlans((prev) => prev.filter((p) => p._id !== planId));
+      Swal.fire("Deleted!", "Plan permanently deleted.", "success");
+    } catch (error: any) {
+      Swal.fire("Error!", error?.message || "Failed to delete plan.", "error");
     }
   };
 
@@ -123,6 +160,9 @@ export default function AdminPlansPage() {
       Swal.fire("Error!", "Failed to update plan.", "error");
     }
   };
+
+  const activePlans = useMemo(() => plans.filter((p) => p.isActive), [plans]);
+  const archivedPlans = useMemo(() => plans.filter((p) => !p.isActive), [plans]);
 
   if (loading) {
     return (
@@ -208,6 +248,39 @@ export default function AdminPlansPage() {
 
       {/* Plans Table */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 bg-white">
+          <div className="inline-flex rounded-lg border border-slate-200 p-1 bg-slate-50">
+            <button
+              type="button"
+              onClick={() => setActiveTab("active")}
+              className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${
+                activeTab === "active"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Active ({activePlans.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("archived")}
+              className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${
+                activeTab === "archived"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Archived ({archivedPlans.length})
+            </button>
+          </div>
+
+          {activeTab === "archived" && (
+            <p className="text-xs text-slate-500">
+              Archived plans are inactive. You can reactivate or permanently delete them.
+            </p>
+          )}
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200">
@@ -233,7 +306,7 @@ export default function AdminPlansPage() {
               </tr>
             </thead>
             <tbody>
-              {plans.map((plan) => (
+              {(activeTab === "active" ? activePlans : archivedPlans).map((plan) => (
                 <tr key={plan._id} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="p-4">
                     <div className="flex items-center gap-3">
@@ -321,24 +394,24 @@ export default function AdminPlansPage() {
                       >
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={() => handleToggleActive(plan)}
-                        className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                        title={plan.isActive ? "Deactivate" : "Activate"}
-                      >
-                        {plan.isActive ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => handleDeletePlan(plan._id, plan.name)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {activeTab === "archived" && (
+                        <button
+                          onClick={() => handleHardDeletePlan(plan._id, plan.name)}
+                          className="p-2 text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="Delete permanently"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      {activeTab === "active" && (
+                        <button
+                          onClick={() => handleDeletePlan(plan._id, plan.name)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Archive"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -347,16 +420,20 @@ export default function AdminPlansPage() {
           </table>
         </div>
 
-        {plans.length === 0 && (
+        {(activeTab === "active" ? activePlans.length : archivedPlans.length) === 0 && (
           <div className="text-center py-12">
             <Package className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-600 mb-4">No plans created yet</p>
-            <button
-              onClick={handleCreatePlan}
-              className="text-blue-600 hover:text-blue-700 font-semibold"
-            >
-              Create your first plan
-            </button>
+            <p className="text-slate-600 mb-4">
+              {activeTab === "active" ? "No active plans found" : "No archived plans found"}
+            </p>
+            {activeTab === "active" && (
+              <button
+                onClick={handleCreatePlan}
+                className="text-blue-600 hover:text-blue-700 font-semibold"
+              >
+                Create your first plan
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -392,9 +469,18 @@ function PlanModal({
     description: plan?.description || "",
     monthlyPrice: plan?.price.monthly || 0,
     yearlyPrice: plan?.price.yearly || 0,
-    mockTests: plan?.features.mockTests === "unlimited" ? -1 : (plan?.features.mockTests || 0),
-    speakingEvaluations: plan?.features.speakingEvaluations === "unlimited" ? -1 : (plan?.features.speakingEvaluations || 0),
-    writingCorrections: plan?.features.writingCorrections === "unlimited" ? -1 : (plan?.features.writingCorrections || 0),
+    mockTestsUnlimited: plan?.features.mockTests === "unlimited",
+    mockTests: plan?.features.mockTests === "unlimited" ? 0 : Number(plan?.features.mockTests || 0),
+    speakingUnlimited: plan?.features.speakingEvaluations === "unlimited",
+    speakingEvaluations:
+      plan?.features.speakingEvaluations === "unlimited"
+        ? 0
+        : Number(plan?.features.speakingEvaluations || 0),
+    writingUnlimited: plan?.features.writingCorrections === "unlimited",
+    writingCorrections:
+      plan?.features.writingCorrections === "unlimited"
+        ? 0
+        : Number(plan?.features.writingCorrections || 0),
     hasAnalytics: plan?.features.hasAnalytics || false,
     hasPersonalizedPlan: plan?.features.hasPersonalizedPlan || false,
     hasPrioritySupport: plan?.features.hasPrioritySupport || false,
@@ -412,18 +498,30 @@ function PlanModal({
     setSaving(true);
 
     try {
+      const normalizedSlug = formData.slug
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9\s-]/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-");
+
+      if (!normalizedSlug) throw new Error("Slug is required");
+      if (Number(formData.monthlyPrice) < 0 || Number(formData.yearlyPrice) < 0) {
+        throw new Error("Price cannot be negative");
+      }
+
       const payload = {
         name: formData.name,
-        slug: formData.slug.toLowerCase().replace(/\s+/g, "-"),
+        slug: normalizedSlug,
         description: formData.description,
         price: {
           monthly: Number(formData.monthlyPrice),
           yearly: Number(formData.yearlyPrice),
         },
         features: {
-          mockTests: formData.mockTests === -1 ? "unlimited" : Number(formData.mockTests),
-          speakingEvaluations: formData.speakingEvaluations === -1 ? "unlimited" : Number(formData.speakingEvaluations),
-          writingCorrections: formData.writingCorrections === -1 ? "unlimited" : Number(formData.writingCorrections),
+          mockTests: formData.mockTestsUnlimited ? "unlimited" : Number(formData.mockTests),
+          speakingEvaluations: formData.speakingUnlimited ? "unlimited" : Number(formData.speakingEvaluations),
+          writingCorrections: formData.writingUnlimited ? "unlimited" : Number(formData.writingCorrections),
           hasAnalytics: formData.hasAnalytics,
           hasPersonalizedPlan: formData.hasPersonalizedPlan,
           hasPrioritySupport: formData.hasPrioritySupport,
@@ -516,10 +614,14 @@ function PlanModal({
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label
+                htmlFor="plan-description"
+                className="block text-sm font-semibold text-slate-700 mb-2"
+              >
                 Description *
               </label>
               <textarea
+                id="plan-description"
                 required
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -535,10 +637,14 @@ function PlanModal({
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label
+                htmlFor="plan-monthly-price"
+                className="block text-sm font-semibold text-slate-700 mb-2"
+              >
                 Monthly Price ($)
               </label>
               <input
+                id="plan-monthly-price"
                 type="number"
                 min="0"
                 step="0.01"
@@ -549,10 +655,14 @@ function PlanModal({
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label
+                htmlFor="plan-yearly-price"
+                className="block text-sm font-semibold text-slate-700 mb-2"
+              >
                 Yearly Price ($/month)
               </label>
               <input
+                id="plan-yearly-price"
                 type="number"
                 min="0"
                 step="0.01"
@@ -564,51 +674,112 @@ function PlanModal({
 
             {/* Features */}
             <div className="md:col-span-2 mt-4">
-              <h3 className="font-bold text-slate-900 mb-4">Features (Use -1 for unlimited)</h3>
+              <h3 className="font-bold text-slate-900 mb-1">Features</h3>
+              <p className="text-sm text-slate-600">
+                Tip: For student access, tests will unlock when their subscription plan tier is at least this plan.
+              </p>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label
+                htmlFor="plan-mock-tests"
+                className="block text-sm font-semibold text-slate-700 mb-2"
+              >
                 Mock Tests
               </label>
               <input
+                id="plan-mock-tests"
                 type="number"
+                min="0"
+                disabled={formData.mockTestsUnlimited}
                 value={formData.mockTests}
                 onChange={(e) => setFormData({ ...formData, mockTests: parseInt(e.target.value) })}
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
-              <p className="text-xs text-slate-500 mt-1">-1 = Unlimited</p>
+              <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={formData.mockTestsUnlimited}
+                  onChange={(e) =>
+                    setFormData({ ...formData, mockTestsUnlimited: e.target.checked })
+                  }
+                  className="w-4 h-4 text-blue-600"
+                />
+                Unlimited
+              </label>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label
+                htmlFor="plan-speaking-evals"
+                className="block text-sm font-semibold text-slate-700 mb-2"
+              >
                 Speaking Evaluations
               </label>
               <input
+                id="plan-speaking-evals"
                 type="number"
+                min="0"
+                disabled={formData.speakingUnlimited}
                 value={formData.speakingEvaluations}
-                onChange={(e) => setFormData({ ...formData, speakingEvaluations: parseInt(e.target.value) })}
+                onChange={(e) =>
+                  setFormData({ ...formData, speakingEvaluations: parseInt(e.target.value) })
+                }
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
+              <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={formData.speakingUnlimited}
+                  onChange={(e) =>
+                    setFormData({ ...formData, speakingUnlimited: e.target.checked })
+                  }
+                  className="w-4 h-4 text-blue-600"
+                />
+                Unlimited
+              </label>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label
+                htmlFor="plan-writing-corrections"
+                className="block text-sm font-semibold text-slate-700 mb-2"
+              >
                 Writing Corrections
               </label>
               <input
+                id="plan-writing-corrections"
                 type="number"
+                min="0"
+                disabled={formData.writingUnlimited}
                 value={formData.writingCorrections}
-                onChange={(e) => setFormData({ ...formData, writingCorrections: parseInt(e.target.value) })}
+                onChange={(e) =>
+                  setFormData({ ...formData, writingCorrections: parseInt(e.target.value) })
+                }
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
+              <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={formData.writingUnlimited}
+                  onChange={(e) =>
+                    setFormData({ ...formData, writingUnlimited: e.target.checked })
+                  }
+                  className="w-4 h-4 text-blue-600"
+                />
+                Unlimited
+              </label>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label
+                htmlFor="plan-trial-days"
+                className="block text-sm font-semibold text-slate-700 mb-2"
+              >
                 Trial Days
               </label>
               <input
+                id="plan-trial-days"
                 type="number"
                 min="0"
                 value={formData.trialDays}
@@ -672,10 +843,14 @@ function PlanModal({
 
             {/* Custom Features */}
             <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label
+                htmlFor="plan-custom-features"
+                className="block text-sm font-semibold text-slate-700 mb-2"
+              >
                 Custom Features (one per line)
               </label>
               <textarea
+                id="plan-custom-features"
                 value={formData.customFeatures}
                 onChange={(e) => setFormData({ ...formData, customFeatures: e.target.value })}
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -685,10 +860,14 @@ function PlanModal({
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">
+              <label
+                htmlFor="plan-display-order"
+                className="block text-sm font-semibold text-slate-700 mb-2"
+              >
                 Display Order
               </label>
               <input
+                id="plan-display-order"
                 type="number"
                 value={formData.displayOrder}
                 onChange={(e) => setFormData({ ...formData, displayOrder: parseInt(e.target.value) })}

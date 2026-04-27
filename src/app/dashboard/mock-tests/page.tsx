@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import {
   BookOpen,
   CheckCircle2,
@@ -31,15 +32,6 @@ interface Test {
 }
 
 type PlanMeta = { name: string; isPremium: boolean; displayOrder: number };
-
-const MODULES: { value: string; label: string }[] = [
-  { value: "", label: "All modules" },
-  { value: "full", label: "Full Mock" },
-  { value: "listening", label: "Listening" },
-  { value: "reading", label: "Reading" },
-  { value: "writing", label: "Writing" },
-  { value: "speaking", label: "Speaking" },
-];
 
 const MODULE_LABELS: Record<string, string> = {
   listening: "Listening",
@@ -97,6 +89,7 @@ function CardSkeleton() {
 }
 
 export default function StudentMockTestsPage() {
+  const { data: session } = useSession();
   const [tests, setTests] = useState<Test[]>([]);
   const [accessibleSlugs, setAccessibleSlugs] = useState<string[]>([]);
   const [plansBySlug, setPlansBySlug] = useState<Record<string, PlanMeta>>({});
@@ -105,8 +98,9 @@ export default function StudentMockTestsPage() {
   const [pagination, setPagination] = useState({ total: 0, pages: 1, page: 1 });
 
   const [search, setSearch] = useState("");
-  const [moduleFilter, setModuleFilter] = useState("");
   const [accessFilter, setAccessFilter] = useState<"all" | "unlocked" | "locked">("all");
+
+  const isLoggedIn = !!session?.user;
 
   const isUnlocked = useCallback(
     (test: Test) => accessibleSlugs.includes(test.accessLevel) || test.accessLevel === "free",
@@ -124,7 +118,7 @@ export default function StudentMockTestsPage() {
       : "bg-slate-50 text-slate-700 border-slate-200";
   };
 
-  const fetchTests = async (page = 1, moduleValue = moduleFilter) => {
+  const fetchTests = async (page = 1) => {
     setLoading(true);
     setError("");
     try {
@@ -133,7 +127,6 @@ export default function StudentMockTestsPage() {
         page: String(page),
         limit: "12",
       });
-      if (moduleValue) params.set("module", moduleValue);
 
       const res = await fetch(`/api/tests?${params}`);
       if (!res.ok) throw new Error("Failed to load tests");
@@ -150,9 +143,8 @@ export default function StudentMockTestsPage() {
   };
 
   useEffect(() => {
-    fetchTests(1, moduleFilter);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moduleFilter]);
+    fetchTests(1);
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -235,22 +227,10 @@ export default function StudentMockTestsPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by title, tag, module..."
+              placeholder="Search by title or tag..."
               className="w-full pl-9 pr-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <select
-            aria-label="Filter by module"
-            value={moduleFilter}
-            onChange={(e) => setModuleFilter(e.target.value)}
-            className="px-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {MODULES.map((m) => (
-              <option key={m.value || "all"} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
           <select
             aria-label="Filter by access"
             value={accessFilter}
@@ -264,9 +244,8 @@ export default function StudentMockTestsPage() {
           <button
             onClick={() => {
               setSearch("");
-              setModuleFilter("");
               setAccessFilter("all");
-              fetchTests(1, "");
+              fetchTests(1);
             }}
             className="inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50"
             type="button"
@@ -282,7 +261,7 @@ export default function StudentMockTestsPage() {
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 flex items-center justify-between gap-3">
           <p className="text-sm font-medium text-rose-700">{error}</p>
           <button
-            onClick={() => fetchTests(pagination.page, moduleFilter)}
+            onClick={() => fetchTests(pagination.page)}
             className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700"
           >
             Try again
@@ -292,7 +271,7 @@ export default function StudentMockTestsPage() {
 
       {/* Cards */}
       {!error && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
           {loading
             ? Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)
             : filtered.map((test) => {
@@ -318,13 +297,13 @@ export default function StudentMockTestsPage() {
                     />
 
                     <div className="p-5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex flex-wrap gap-2">
-                          <span className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold uppercase tracking-wide bg-slate-50 text-slate-700 border border-slate-200">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-1 min-w-0 flex-wrap items-center gap-2 min-h-[28px]">
+                          <span className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold uppercase tracking-wide whitespace-nowrap bg-slate-50 text-slate-700 border border-slate-200">
                             {MODULE_LABELS[test.module] ?? test.module}
                           </span>
                           {test.type && (
-                            <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wide bg-white text-slate-600 border border-slate-200">
+                            <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wide whitespace-nowrap max-w-40 truncate bg-white text-slate-600 border border-slate-200">
                               {test.type}
                             </span>
                           )}
@@ -390,13 +369,23 @@ export default function StudentMockTestsPage() {
                           </Link>
                         ) : (
                           <div className="space-y-2">
-                            <Link
-                              href={`/login?redirect=${encodeURIComponent(`/exam?testId=${test._id}`)}`}
-                              className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl font-extrabold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-                            >
-                              <Lock size={18} />
-                              Login to unlock
-                            </Link>
+                            {isLoggedIn ? (
+                              <Link
+                                href="/pricing"
+                                className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl font-extrabold text-white bg-linear-to-r from-indigo-600 via-sky-600 to-fuchsia-600 hover:from-indigo-700 hover:via-sky-700 hover:to-fuchsia-700 transition-colors"
+                              >
+                                <CheckCircle2 size={18} />
+                                Upgrade to unlock
+                              </Link>
+                            ) : (
+                              <Link
+                                href={`/login?redirect=${encodeURIComponent(`/exam?testId=${test._id}`)}`}
+                                className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl font-extrabold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+                              >
+                                <Lock size={18} />
+                                Login to unlock
+                              </Link>
+                            )}
                             <Link
                               href="/pricing"
                               className="block text-center text-sm font-semibold text-indigo-700 hover:underline"
@@ -421,7 +410,7 @@ export default function StudentMockTestsPage() {
           </div>
           <h3 className="text-lg font-bold text-slate-900 mt-4">No tests found</h3>
           <p className="text-sm text-slate-600 mt-1 max-w-md mx-auto">
-            Try changing module or access filters, or clear your search.
+            Try changing access filters, or clear your search.
           </p>
         </div>
       )}
@@ -433,7 +422,7 @@ export default function StudentMockTestsPage() {
             <button
               title="Previous page"
               disabled={pagination.page <= 1}
-              onClick={() => fetchTests(pagination.page - 1, moduleFilter)}
+              onClick={() => fetchTests(pagination.page - 1)}
               className="p-2 sm:px-4 sm:py-2 text-sm font-semibold rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 disabled:opacity-40 disabled:hover:bg-transparent"
             >
               <span className="hidden sm:inline">Previous</span>
@@ -444,7 +433,7 @@ export default function StudentMockTestsPage() {
               {Array.from({ length: pagination.pages }, (_, i) => i + 1).map((p) => (
                 <button
                   key={p}
-                  onClick={() => fetchTests(p, moduleFilter)}
+                  onClick={() => fetchTests(p)}
                   className={`w-10 h-10 rounded-lg text-sm font-bold transition-all ${
                     p === pagination.page
                       ? "bg-blue-600 text-white shadow-md"
@@ -459,7 +448,7 @@ export default function StudentMockTestsPage() {
             <button
               title="Next page"
               disabled={pagination.page >= pagination.pages}
-              onClick={() => fetchTests(pagination.page + 1, moduleFilter)}
+              onClick={() => fetchTests(pagination.page + 1)}
               className="p-2 sm:px-4 sm:py-2 text-sm font-semibold rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 disabled:opacity-40 disabled:hover:bg-transparent"
             >
               <span className="hidden sm:inline">Next</span>

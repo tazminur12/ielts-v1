@@ -4,6 +4,7 @@ export interface IPlan extends Document {
   name: string;
   slug: string;
   description: string;
+  tierRank: number; // explicit tiering for access (Free=1, Pro=2, Ultimate=3...)
   price: {
     monthly: number;
     yearly: number;
@@ -50,6 +51,11 @@ const PlanSchema: Schema<IPlan> = new Schema(
     description: {
       type: String,
       required: true,
+    },
+    tierRank: {
+      type: Number,
+      default: 1,
+      min: 1,
     },
     price: {
       monthly: {
@@ -142,6 +148,7 @@ const PlanSchema: Schema<IPlan> = new Schema(
 // Index for faster queries
 PlanSchema.index({ slug: 1 });
 PlanSchema.index({ isActive: 1, displayOrder: 1 });
+PlanSchema.index({ isActive: 1, tierRank: 1 });
 
 const Plan: Model<IPlan> =
   mongoose.models.Plan || mongoose.model<IPlan>("Plan", PlanSchema);

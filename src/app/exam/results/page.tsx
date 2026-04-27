@@ -58,7 +58,13 @@ interface Attempt {
   timeSpent?: number;
   startedAt: string;
   submittedAt?: string;
-  testId: { title: string; module: string; examType: string; totalQuestions?: number };
+  testId: {
+    title: string;
+    module: string;
+    examType: string;
+    totalQuestions?: number;
+    accessLevel?: string;
+  };
 }
 
 // ─── Band Helpers ─────────────────────────────────────────────────────────────
@@ -228,6 +234,10 @@ function ResultsContent() {
   ).sort((a, b) => a.questionNumber - b.questionNumber);
 
   const aiAnswers = answers.filter((a) => a.aiEvaluation);
+  const testAccessLevel = attempt.testId?.accessLevel ?? "free";
+  const allowAiFeedback =
+    String(attempt.testId?.examType ?? attempt.examType) === "mock" &&
+    !["free", "free-trial"].includes(String(testAccessLevel));
 
   const correctCount = objectiveAnswers.filter((a) => a.isCorrect).length;
   const totalObjective = objectiveAnswers.length;
@@ -429,7 +439,7 @@ function ResultsContent() {
         )}
 
         {/* ── AI Feedback (Writing / Speaking) ─────────────────────────── */}
-        {aiAnswers.length > 0 && (
+        {allowAiFeedback && aiAnswers.length > 0 && (
           <div>
             <SectionHeader icon={<Sparkles size={16} />} title="AI Examiner Feedback" />
             <div className="mt-3 space-y-3">
