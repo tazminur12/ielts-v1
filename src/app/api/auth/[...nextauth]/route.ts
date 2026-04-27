@@ -75,14 +75,18 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user, trigger }) {
       if (user) {
         token.role = user.role;
+        // Never trust provider user.id (e.g. Google sub). Prefer our DB User _id.
+        // Keep provider id only as a fallback until we resolve the DB user below.
         token.id = user.id;
         // Ensure middleware has onboarding status on first login
         await connectDB();
-        const dbUser = await User.findOne({ email: token.email }).select(
-          "role onboardingCompletedAt"
+        const email = (user as any)?.email ?? token.email;
+        const dbUser = await User.findOne({ email }).select(
+          "_id role onboardingCompletedAt"
         );
         if (dbUser) {
           token.role = dbUser.role;
+          token.id = dbUser._id.toString();
           (token as any).onboardingCompletedAt = dbUser.onboardingCompletedAt;
         }
       }

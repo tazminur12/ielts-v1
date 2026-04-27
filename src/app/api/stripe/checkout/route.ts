@@ -16,11 +16,12 @@ export async function POST(req: NextRequest) {
 
     const { planSlug, billingCycle, planName, price } = await req.json();
 
-    // Dynamically detect base URL — localhost te http, production e https auto
-    const host = req.headers.get("host") || "localhost:3000";
-    const proto = req.headers.get("x-forwarded-proto") || 
-      (host.startsWith("localhost") ? "http" : "https");
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${proto}://${host}`;
+    // Build base URL from the incoming request host.
+    // Do NOT hardcode a deployment URL here (e.g. Vercel preview), otherwise Stripe will redirect users to the wrong domain.
+    const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "localhost:3000";
+    const proto =
+      req.headers.get("x-forwarded-proto") || (String(host).includes("localhost") ? "http" : "https");
+    const baseUrl = `${proto}://${host}`;
 
     // Create Stripe Checkout Session
     const checkoutSession = await stripe.checkout.sessions.create({

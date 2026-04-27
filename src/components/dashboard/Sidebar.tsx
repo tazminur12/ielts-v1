@@ -17,6 +17,7 @@ import {
   Award,
   Gem,
   Search,
+  Package,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
@@ -65,6 +66,9 @@ export default function Sidebar() {
     { name: 'Manage Users', href: '/dashboard/admin/users', icon: Users },
     { name: 'Mock Tests', href: '/dashboard/admin/mock-tests', icon: GraduationCap },
     { name: 'Practice Tests', href: '/dashboard/admin/practice-tests', icon: BookOpen },
+    ...(role === 'super-admin'
+      ? [{ name: 'Plans', href: '/dashboard/admin/plans', icon: Package }]
+      : []),
     {
       name: 'Banner Management',
       href: '/dashboard/admin/banners',

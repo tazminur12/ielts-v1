@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import dbConnect from "@/lib/mongodb";
 import Plan from "@/models/Plan";
+import Subscription from "@/models/Subscription";
+
+function isSuperAdmin(session: any) {
+  return session?.user?.role === "super-admin";
+}
 
 // GET single plan
 export async function GET(
@@ -45,6 +52,11 @@ export async function PUT(
   context: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!isSuperAdmin(session)) {
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    }
+
     await dbConnect();
     const { slug } = await context.params;
 
@@ -84,19 +96,48 @@ export async function PUT(
 
 // DELETE plan (admin only)
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!isSuperAdmin(session)) {
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    }
+
     await dbConnect();
     const { slug } = await context.params;
 
-    // Soft delete by setting isActive to false
-    const plan = await Plan.findOneAndUpdate(
-      { slug },
-      { $set: { isActive: false } },
-      { new: true }
-    );
+    const { searchParams } = new URL(req.url);
+    const hard = searchParams.get("hard") === "1";
+
+    if (hard) {
+      const planDoc = await Plan.findOne({ slug }).select("_id").lean();
+      if (!planDoc?._id) {
+        return NextResponse.json(
+          { success: false, error: "Plan not found" },
+          { status: 404 }
+        );
+      }
+
+      const usedBySubscription = await Subscription.exists({ planId: planDoc._id });
+      if (usedBySubscription) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "This plan has subscriptions. Archive it instead (deactivate) or migrate subscriptions first.",
+          },
+          { status: 409 }
+        );
+      }
+
+      await Plan.deleteOne({ _id: planDoc._id });
+      return NextResponse.json({ success: true, message: "Plan permanently deleted" });
+    }
+
+    // Soft delete (archive) by setting isActive to false
+    const plan = await Plan.findOneAndUpdate({ slug }, { $set: { isActive: false } }, { new: true });
 
     if (!plan) {
       return NextResponse.json(
@@ -110,7 +151,7 @@ export async function DELETE(
 
     return NextResponse.json({
       success: true,
-      message: "Plan deleted successfully",
+      message: "Plan archived successfully",
     });
   } catch (error: any) {
     console.error("Error deleting plan:", error);

@@ -7,9 +7,6 @@ import {
   ArrowLeft,
   BrainCircuit,
   BookType,
-  Mic,
-  Headphones,
-  PenTool,
   Trophy,
   Type,
   FileEdit,
@@ -32,12 +29,7 @@ export default function GenerateMockTestPage() {
   const [form, setForm] = useState({
     title: "",
     ieltsType: "Academic" as "Academic" | "General",
-    module: "reading" as
-      | "listening"
-      | "reading"
-      | "writing"
-      | "speaking"
-      | "full",
+    module: "full" as "full",
     topic: "",
     /** Fallback when a full-mock section topic is left empty */
     defaultTheme: "",
@@ -51,62 +43,9 @@ export default function GenerateMockTestPage() {
     speakingTitle: "",
     difficulty: "medium",
     accessLevel: "free",
-    questionCount: 10,
-    questionTypes: ["multiple_choice"] as string[],
+    questionCount: 32,
+    questionTypes: ["mixed"] as string[],
   });
-
-  const availableTypesForModule = () => {
-    switch (form.module) {
-      case "listening":
-      case "reading":
-        return [
-          { id: "multiple_choice", label: "Multiple Choice" },
-          { id: "true_false_not_given", label: "True / False / Not Given" },
-          { id: "matching_headings", label: "Matching Headings" },
-          { id: "short_answer", label: "Short Answer" },
-        ];
-      case "writing":
-        return [
-          { id: "essay", label: "Essay (Task 2)" },
-          { id: "report", label: "Chart/Graph Report (Task 1)" },
-        ];
-      case "speaking":
-        return [
-          { id: "interview", label: "Interview (Part 1)" },
-          { id: "cue_card", label: "Cue Card (Part 2)" },
-          { id: "discussion", label: "Discussion (Part 3)" },
-        ];
-      case "full":
-        return [];
-      default:
-        return [];
-    }
-  };
-
-  const toggleQuestionType = (typeId: string) => {
-    setForm((prev) => {
-      const exists = prev.questionTypes.includes(typeId);
-      if (exists && prev.questionTypes.length === 1) return prev;
-      return {
-        ...prev,
-        questionTypes: exists
-          ? prev.questionTypes.filter((t) => t !== typeId)
-          : [...prev.questionTypes, typeId],
-      };
-    });
-  };
-
-  useEffect(() => {
-    if (form.module === "full") {
-      setForm((prev) => ({ ...prev, questionCount: 32 }));
-      return;
-    }
-    const types = availableTypesForModule();
-    if (types.length > 0) {
-      setForm((prev) => ({ ...prev, questionTypes: [types[0].id] }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.module]);
 
   useEffect(() => {
     fetch("/api/plans")
@@ -121,16 +60,9 @@ export default function GenerateMockTestPage() {
     try {
       const defaultTitle =
         form.title ||
-        `IELTS Mock — ${form.ieltsType} · ${
-          form.module === "full"
-            ? form.defaultTheme || "General"
-            : form.topic || "General"
-        } (${form.module})`;
+        `IELTS Full Mock — ${form.ieltsType} · ${form.defaultTheme || "General"}`;
 
-      const topicForApi =
-        form.module === "full"
-          ? form.defaultTheme || form.topic || "General"
-          : form.topic || "General";
+      const topicForApi = form.defaultTheme || form.topic || "General";
 
       const response = await fetch("/api/admin/tests/generate", {
         method: "POST",
@@ -143,28 +75,16 @@ export default function GenerateMockTestPage() {
           topic: topicForApi,
           difficulty: form.difficulty,
           accessLevel: form.accessLevel,
-          questionCount:
-            form.module === "full"
-              ? form.questionCount
-              : form.module === "writing"
-                ? 2
-                : form.module === "speaking"
-                  ? 3
-                  : form.questionCount,
-          questionTypes:
-            form.module === "full" ? ["mixed"] : form.questionTypes,
-          ...(form.module === "full"
-            ? {
-                listeningTopic: form.listeningTopic,
-                listeningTitle: form.listeningTitle,
-                readingTopic: form.readingTopic,
-                readingTitle: form.readingTitle,
-                writingTopic: form.writingTopic,
-                writingTitle: form.writingTitle,
-                speakingTopic: form.speakingTopic,
-                speakingTitle: form.speakingTitle,
-              }
-            : {}),
+          questionCount: form.questionCount,
+          questionTypes: ["mixed"],
+          listeningTopic: form.listeningTopic,
+          listeningTitle: form.listeningTitle,
+          readingTopic: form.readingTopic,
+          readingTitle: form.readingTitle,
+          writingTopic: form.writingTopic,
+          writingTitle: form.writingTitle,
+          speakingTopic: form.speakingTopic,
+          speakingTitle: form.speakingTitle,
         }),
       });
       const data = await response.json();
@@ -192,69 +112,8 @@ export default function GenerateMockTestPage() {
     }
   };
 
-  const modules = [
-    {
-      id: "listening",
-      name: "Listening",
-      icon: Headphones,
-      color: "text-blue-500",
-      bg: "bg-blue-50",
-      border: "border-blue-200",
-      selBorder: "border-blue-600",
-      selBg: "bg-blue-50/80",
-    },
-    {
-      id: "reading",
-      name: "Reading",
-      icon: BookType,
-      color: "text-emerald-500",
-      bg: "bg-emerald-50",
-      border: "border-emerald-200",
-      selBorder: "border-emerald-600",
-      selBg: "bg-emerald-50/80",
-    },
-    {
-      id: "writing",
-      name: "Writing",
-      icon: PenTool,
-      color: "text-violet-500",
-      bg: "bg-violet-50",
-      border: "border-violet-200",
-      selBorder: "border-violet-600",
-      selBg: "bg-violet-50/80",
-    },
-    {
-      id: "speaking",
-      name: "Speaking",
-      icon: Mic,
-      color: "text-rose-500",
-      bg: "bg-rose-50",
-      border: "border-rose-200",
-      selBorder: "border-rose-600",
-      selBg: "bg-rose-50/80",
-    },
-    {
-      id: "full",
-      name: "Full mock",
-      icon: LayoutGrid,
-      color: "text-indigo-500",
-      bg: "bg-indigo-50",
-      border: "border-indigo-200",
-      selBorder: "border-indigo-600",
-      selBg: "bg-indigo-50/80",
-    },
-  ];
-
-  const maxQuestions =
-    form.module === "full"
-      ? 48
-      : form.module === "writing"
-        ? 2
-        : form.module === "speaking"
-          ? 3
-          : 20;
-
-  const minQuestions = form.module === "full" ? 24 : 1;
+  const maxQuestions = 48;
+  const minQuestions = 24;
 
   return (
     <>
@@ -263,7 +122,7 @@ export default function GenerateMockTestPage() {
         label="mock exam"
         variant="mock"
       />
-      <div className="max-w-4xl mx-auto space-y-6 pb-12">
+      <div className="max-w-6xl mx-auto space-y-6 pb-12 px-4 sm:px-6">
       <div className="flex items-center gap-4">
         <Link
           href="/dashboard/admin/mock-tests"
@@ -274,16 +133,16 @@ export default function GenerateMockTestPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2 text-gray-900">
             <BrainCircuit className="text-blue-600" />
-            Generate mock exam with AI
+            Generate full mock exam with AI
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            Timed, exam-style IELTS mock content — saved as draft for your review.
+            Creates a full IELTS mock (Listening, Reading, Writing, Speaking) — saved as a draft for review.
           </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-8 space-y-6">
           <form
             onSubmit={handleGenerate}
             className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-8"
@@ -314,69 +173,31 @@ export default function GenerateMockTestPage() {
             <div className="space-y-3">
               <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                 <BookType size={16} className="text-gray-400" />
-                Module or full test
+                Test type
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {modules.map((m) => {
-                  const isSelected = form.module === m.id;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setForm({ ...form, module: m.id as typeof form.module })}
-                      className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
-                        isSelected
-                          ? `${m.selBorder} ${m.selBg} shadow-sm`
-                          : "border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
-                      <div
-                        className={`p-3 rounded-full mb-2 ${isSelected ? "bg-white shadow-sm" : m.bg}`}
-                      >
-                        <m.icon
-                          size={22}
-                          className={isSelected ? m.color : "text-gray-500"}
-                        />
-                      </div>
-                      <span
-                        className={`font-semibold text-xs text-center ${isSelected ? "text-gray-900" : "text-gray-600"}`}
-                      >
-                        {m.name}
-                      </span>
-                    </button>
-                  );
-                })}
+              <div className="flex items-center justify-between p-4 rounded-2xl border border-indigo-100 bg-indigo-50/60">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-white shadow-sm border border-indigo-100 text-indigo-600">
+                    <LayoutGrid size={20} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-extrabold text-slate-900">Full Mock Test</div>
+                    <div className="text-xs text-slate-600">
+                      Generates all 4 modules in one draft (30–90s).
+                    </div>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-indigo-700 bg-white border border-indigo-100 px-3 py-1.5 rounded-full">
+                  Fixed
+                </span>
               </div>
-              {form.module === "full" && (
-                <p className="text-xs text-gray-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
-                  Full mock generates four sections (Listening, Reading, Writing, Speaking) in one draft.
-                  Large output — generation may take 30–90 seconds.
-                </p>
-              )}
             </div>
 
             <div className="space-y-5 pt-2 border-t border-gray-100">
-              {form.module !== "full" && (
-                <div className="space-y-3">
-                  <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <Type size={16} className="text-gray-400" />
-                    Theme / topic <span className="text-gray-400 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Urban development, Health, Education, Environment…"
-                    value={form.topic}
-                    onChange={(e) => setForm({ ...form, topic: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              )}
-
-              {form.module === "full" && (
-                <div className="space-y-4">
-                  <p className="text-xs text-gray-500">
-                    Set topic and section title for each skill. Empty topic uses the default theme below.
-                  </p>
+              <div className="space-y-4">
+                <p className="text-xs text-gray-500">
+                  Set topic and section title for each skill. Empty topic uses the default theme below.
+                </p>
                   <div className="space-y-3">
                     <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                       <Type size={16} className="text-gray-400" />
@@ -453,8 +274,7 @@ export default function GenerateMockTestPage() {
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+              </div>
 
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -470,34 +290,6 @@ export default function GenerateMockTestPage() {
                 />
               </div>
 
-              {form.module !== "full" && (
-                <div className="space-y-3 pt-2">
-                  <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <BrainCircuit size={16} className="text-gray-400" />
-                    Question types
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {availableTypesForModule().map((qt) => (
-                      <label
-                        key={qt.id}
-                        className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors select-none ${
-                          form.questionTypes.includes(qt.id)
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={form.questionTypes.includes(qt.id)}
-                          onChange={() => toggleQuestionType(qt.id)}
-                          className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300"
-                        />
-                        <span className="text-sm font-medium text-gray-700">{qt.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="pt-4">
@@ -522,13 +314,13 @@ export default function GenerateMockTestPage() {
                 )}
               </button>
               <p className="text-center text-xs text-gray-400 mt-4">
-                Single-module mocks usually finish in 15–45 seconds. Full mocks may take longer.
+                Full mocks usually finish in 30–90 seconds depending on load and prompt length.
               </p>
             </div>
           </form>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 lg:col-span-4">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-6">
             <h3 className="font-bold text-gray-900 flex items-center gap-2 border-b border-gray-100 pb-3">
               <Settings className="text-gray-400 w-5 h-5" />
@@ -577,7 +369,7 @@ export default function GenerateMockTestPage() {
               <div className="flex items-center justify-between">
                 <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                   <Hash size={16} className="text-gray-400" />
-                  {form.module === "full" ? "Target questions (approx.)" : "Question count"}
+                  Target questions (approx.)
                 </label>
                 <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg text-sm">
                   {form.questionCount}

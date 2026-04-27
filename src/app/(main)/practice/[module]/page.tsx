@@ -98,9 +98,9 @@ export default function PracticeModulePage() {
       // the filter is for tags like Academic/General
       if (typeFilter && typeFilter !== "All") queryParams.set("type", typeFilter);
 
-      const res = await fetch(`/api/tests?${queryParams}`);
-      if (!res.ok) throw new Error("Failed to load tests");
-      const data = await res.json();
+      const res = await fetch(`/api/tests?${queryParams}`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || data?.error || "Failed to load tests");
       setTests(data.tests || []);
       setAccessibleSlugs(data.accessibleSlugs || []);
       setPlansBySlug(data.plansBySlug || {});

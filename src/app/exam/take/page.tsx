@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, Suspense } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Clock, AlertCircle, CheckCircle, Mic, MicOff, Send,
@@ -208,6 +208,19 @@ function TakeExamContent() {
   // Ref keeps handleSubmit fresh so the auto-submit effect never uses stale closure
   const handleSubmitRef = useRef<(auto?: boolean) => Promise<void>>(async () => {});
 
+  const questionNumberById = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!test) return map;
+    for (const sec of test.sections ?? []) {
+      for (const grp of sec.groups ?? []) {
+        for (const q of grp.questions ?? []) {
+          if (q?._id) map.set(String(q._id), Number(q.questionNumber));
+        }
+      }
+    }
+    return map;
+  }, [test]);
+
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!testId) { setError("No test ID provided."); setLoading(false); return; }
@@ -296,10 +309,12 @@ function TakeExamContent() {
   // ── Save answer ────────────────────────────────────────────────────────────
   const saveAnswer = useCallback(async (questionId: string, value: string, questionType: string) => {
     if (!attemptId) return;
+    const questionNumber = questionNumberById.get(String(questionId));
+    if (questionNumber == null || !Number.isFinite(questionNumber)) return;
     if (saveInFlight.current.has(questionId)) return;
     saveInFlight.current.add(questionId);
 
-    const body: Record<string, unknown> = { attemptId, questionId, questionType };
+    const body: Record<string, unknown> = { attemptId, questionId, questionNumber, questionType };
     const selectTypes: QuestionType[] = ["multiple_choice", "true_false_not_given", "matching", "matching_headings"];
     if (selectTypes.includes(questionType as QuestionType)) {
       body.selectedOption = value;
@@ -316,7 +331,7 @@ function TakeExamContent() {
     } finally {
       saveInFlight.current.delete(questionId);
     }
-  }, [attemptId]);
+  }, [attemptId, questionNumberById]);
 
   const handleAnswer = (questionId: string, value: string, questionType: string) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));

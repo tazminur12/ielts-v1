@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import dbConnect from "@/lib/mongodb";
 import Plan from "@/models/Plan";
 
 // GET all active plans
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     await dbConnect();
 
-    const plans = await Plan.find({ isActive: true })
+    const { searchParams } = new URL(req.url);
+    const includeInactive = searchParams.get("includeInactive") === "1";
+
+    const plans = await Plan.find(includeInactive ? {} : { isActive: true })
       .sort({ displayOrder: 1 })
       .lean();
 
@@ -30,6 +35,11 @@ export async function GET() {
 // POST create a new plan (admin only)
 export async function POST(req: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    if (session?.user?.role !== "super-admin") {
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    }
+
     await dbConnect();
 
     const body = await req.json();
@@ -37,6 +47,7 @@ export async function POST(req: NextRequest) {
       name,
       slug,
       description,
+      tierRank,
       price,
       features,
       displayOrder,
@@ -51,6 +62,14 @@ export async function POST(req: NextRequest) {
           success: false,
           error: "Missing required fields",
         },
+        { status: 400 }
+      );
+    }
+
+    const normalizedTierRank = Number(tierRank ?? 1);
+    if (!Number.isFinite(normalizedTierRank) || normalizedTierRank < 1) {
+      return NextResponse.json(
+        { success: false, error: "tierRank must be a number >= 1" },
         { status: 400 }
       );
     }
@@ -71,6 +90,7 @@ export async function POST(req: NextRequest) {
       name,
       slug,
       description,
+      tierRank: normalizedTierRank,
       price,
       features,
       displayOrder: displayOrder || 0,

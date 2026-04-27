@@ -6,6 +6,15 @@ import Test from "@/models/Test";
 import Subscription from "@/models/Subscription";
 import Plan from "@/models/Plan";
 
+function safeTierRank(p: { tierRank?: number; displayOrder?: number } | null | undefined): number {
+  const tr = Number((p as any)?.tierRank);
+  if (Number.isFinite(tr) && tr >= 1) return tr;
+  // Backward compatibility: if tierRank wasn't set yet, fall back to displayOrder (at least deterministic).
+  const d = Number((p as any)?.displayOrder);
+  if (Number.isFinite(d) && d >= 1) return d;
+  return 1;
+}
+
 // GET /api/tests  — public list of published tests (with access metadata)
 export async function GET(req: NextRequest) {
   try {
@@ -25,6 +34,10 @@ export async function GET(req: NextRequest) {
     // Determine which plan slugs this user can access
     let accessibleSlugs: string[] = [];
 
+    const activePlans = (await Plan.find({ isActive: true })
+      .select("slug tierRank displayOrder")
+      .lean()) as { slug: string; tierRank?: number; displayOrder?: number }[];
+
     if (session?.user?.id) {
       // Find user's active subscription and its plan
       const subscription = await Subscription.findOne({
@@ -32,42 +45,49 @@ export async function GET(req: NextRequest) {
         status: { $in: ["active", "trial"] },
         endDate: { $gte: new Date() },
       })
-        .populate("planId")
-        .lean() as { planId: { slug: string; displayOrder: number } } | null;
+        .populate({ path: "planId", select: "slug tierRank displayOrder" })
+        .lean() as { planId: { slug: string; tierRank?: number; displayOrder?: number } } | null;
 
       if (subscription?.planId) {
-        const userPlanOrder = subscription.planId.displayOrder;
-        // User can access tests of their plan and all lower-order plans
-        const accessiblePlans = await Plan.find({
-          isActive: true,
-          displayOrder: { $lte: userPlanOrder },
-        })
-          .select("slug")
-          .lean() as { slug: string }[];
-        accessibleSlugs = accessiblePlans.map((p) => p.slug);
+        const userTierRank = safeTierRank(subscription.planId);
+
+        // Real-world rule: higher tierRank includes all lower tierRank plans.
+        // Backward compatible: if tierRank isn't set on existing plans yet, fall back to displayOrder.
+        accessibleSlugs = activePlans
+          .filter((p) => safeTierRank(p) <= userTierRank)
+          .map((p) => p.slug);
       }
     }
 
     // If no accessible slugs (not logged in or no subscription),
-    // access falls back to the lowest-order plan (free)
+    // access falls back to tierRank=1 plan ("free" tier)
     if (accessibleSlugs.length === 0) {
-      const freePlan = await Plan.findOne({ isActive: true })
-        .sort({ displayOrder: 1 })
-        .select("slug")
-        .lean() as { slug: string } | null;
-      accessibleSlugs = freePlan ? [freePlan.slug] : ["free"];
+      const freeCandidate =
+        activePlans
+          .map((p) => ({ slug: p.slug, rank: safeTierRank(p) }))
+          .sort((a, b) => a.rank - b.rank)[0]?.slug ?? "free";
+      accessibleSlugs = [freeCandidate];
     }
 
-    const plans = await Plan.find({ isActive: true })
-      .select("slug name isPremium displayOrder")
-      .lean() as { slug: string; name: string; isPremium?: boolean; displayOrder?: number }[];
+    const plans = (await Plan.find({ isActive: true })
+      .select("slug name isPremium displayOrder tierRank")
+      .lean()) as {
+      slug: string;
+      name: string;
+      isPremium?: boolean;
+      displayOrder?: number;
+      tierRank?: number;
+    }[];
 
-    const plansBySlug = plans.reduce<Record<string, { name: string; isPremium: boolean; displayOrder: number }>>(
+    const plansBySlug = plans.reduce<
+      Record<string, { name: string; isPremium: boolean; displayOrder: number; tierRank: number }>
+    >(
       (acc, p) => {
         acc[p.slug] = {
           name: p.name,
           isPremium: Boolean(p.isPremium),
           displayOrder: Number(p.displayOrder ?? 0),
+          tierRank: safeTierRank(p),
         };
         return acc;
       },
