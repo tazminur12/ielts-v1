@@ -1,9 +1,12 @@
 import mongoose from "mongoose";
 
-const MONGO_URI = process.env.MONGO_URI;
+// Support common Mongo env var names across hosts (Netlify/Vercel/local).
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 
 if (!MONGO_URI) {
-  throw new Error("Please define the MONGO_URI environment variable inside .env");
+  throw new Error(
+    "Please define MONGO_URI (or MONGODB_URI) environment variable inside your environment config"
+  );
 }
 
 interface MongooseCache {
