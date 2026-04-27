@@ -29,6 +29,7 @@ import Assignment from "@/models/Assignment";
 import Plan from "@/models/Plan";
 import Attempt from "@/models/Attempt";
 import Test from "@/models/Test";
+import { AdminDashboardProPanel } from "@/components/admin/AdminDashboardProPanel";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -73,9 +74,108 @@ export default async function DashboardPage() {
 
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const attemptsLast7Days = await Attempt.countDocuments({
-      startedAt: { $gte: sevenDaysAgo },
+
+    // Attempts per day (last 7 days) for charts
+    const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const startDay = new Date(sevenDaysAgo);
+    startDay.setHours(0, 0, 0, 0);
+    const endDay = new Date();
+    endDay.setHours(23, 59, 59, 999);
+
+    const dailyAgg = await Attempt.aggregate([
+      { $match: { startedAt: { $gte: startDay, $lte: endDay } } },
+      {
+        $group: {
+          _id: {
+            y: { $year: "$startedAt" },
+            m: { $month: "$startedAt" },
+            d: { $dayOfMonth: "$startedAt" },
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const key = (dt: Date) =>
+      `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(
+        dt.getDate()
+      ).padStart(2, "0")}`;
+
+    const dailyMap = new Map<string, number>();
+    dailyAgg.forEach((r: any) => {
+      const k = `${r._id.y}-${String(r._id.m).padStart(2, "0")}-${String(r._id.d).padStart(2, "0")}`;
+      dailyMap.set(k, Number(r.count) || 0);
     });
+
+    const attempts7d = Array.from({ length: 7 }).map((_, i) => {
+      const dt = new Date(startDay);
+      dt.setDate(dt.getDate() + i + 1); // startDay is 7 days ago at 00:00, we want inclusive last 7 days ending today
+      const k = key(dt);
+      return {
+        label: dayLabels[(dt.getDay() + 6) % 7], // JS: Sun=0; map to Mon..Sun
+        value: dailyMap.get(k) ?? 0,
+      };
+    });
+
+    // Registrations per day (last 7 days)
+    const regAgg = await User.aggregate([
+      { $match: { createdAt: { $gte: startDay, $lte: endDay } } },
+      {
+        $group: {
+          _id: {
+            y: { $year: "$createdAt" },
+            m: { $month: "$createdAt" },
+            d: { $dayOfMonth: "$createdAt" },
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const regMap = new Map<string, number>();
+    regAgg.forEach((r: any) => {
+      const k = `${r._id.y}-${String(r._id.m).padStart(2, "0")}-${String(r._id.d).padStart(2, "0")}`;
+      regMap.set(k, Number(r.count) || 0);
+    });
+
+    const registrations7d = Array.from({ length: 7 }).map((_, i) => {
+      const dt = new Date(startDay);
+      dt.setDate(dt.getDate() + i + 1);
+      const k = key(dt);
+      return {
+        label: dayLabels[(dt.getDay() + 6) % 7],
+        value: regMap.get(k) ?? 0,
+      };
+    });
+
+    const newUsers7d = registrations7d.reduce(
+      (acc, p) => acc + (Number(p.value) || 0),
+      0
+    );
+
+    // MRR estimate: sum plan monthly-equivalent for active/trial subs
+    const subsForMrr = await Subscription.find({
+      status: { $in: ["active", "trial"] },
+    })
+      .populate("planId", "price")
+      .select("billingCycle planId")
+      .lean();
+
+    const mrrMonthly = (subsForMrr as any[]).reduce((acc, s) => {
+      const plan = s?.planId;
+      const monthly = Number(plan?.price?.monthly ?? 0);
+      const yearlyMonthlyEquivalent = Number(plan?.price?.yearly ?? 0); // stored as $/month for yearly
+      const cycle = String(s?.billingCycle || "monthly");
+      const amt = cycle === "yearly" ? yearlyMonthlyEquivalent : monthly;
+      return acc + (Number.isFinite(amt) ? amt : 0);
+    }, 0);
+
+    const avgRatingAgg = await Test.aggregate([
+      { $match: { status: "published", rating: { $gt: 0 } } },
+      { $group: { _id: null, avg: { $avg: "$rating" } } },
+    ]);
+    const avgTestRating =
+      avgRatingAgg?.[0]?.avg != null ? Number(avgRatingAgg[0].avg) : null;
 
     const recentUsers = await User.find()
       .sort({ createdAt: -1 })
@@ -347,23 +447,7 @@ export default async function DashboardPage() {
 
         {/* Strip */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="rounded-4xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-widest text-slate-500">
-                  Attempts (7d)
-                </p>
-                <p className="text-2xl font-extrabold tabular-nums text-slate-900 mt-1">
-                  {attemptsLast7Days}
-                </p>
-              </div>
-              <div className="h-11 w-11 rounded-3xl border border-slate-200 bg-slate-50 flex items-center justify-center">
-                <BarChart3 className="w-5 h-5 text-slate-500" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-4xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+          <div className="rounded-4xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-3">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-extrabold uppercase tracking-widest text-slate-500">
@@ -394,6 +478,16 @@ export default async function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Professional dashboard charts */}
+        <AdminDashboardProPanel
+          mrrMonthly={mrrMonthly}
+          newUsers7d={newUsers7d}
+          activeSubs={activeSubs}
+          avgTestRating={avgTestRating}
+          attempts7d={attempts7d}
+          registrations7d={registrations7d}
+        />
 
         {/* Quick actions */}
         <div>
