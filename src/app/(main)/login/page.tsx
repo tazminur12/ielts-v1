@@ -65,6 +65,17 @@ function LoginForm() {
         });
         setLoading(false);
       } else {
+        await Swal.fire({
+          title: 'Login Successful!',
+          text: 'Redirecting to your dashboard…',
+          icon: 'success',
+          showConfirmButton: false,
+          timer: 700,
+          timerProgressBar: true,
+          confirmButtonColor: '#2563eb',
+          customClass: { popup: 'rounded-[2rem]' },
+        });
+
         router.push(redirectTo || '/dashboard');
         router.refresh();
       }

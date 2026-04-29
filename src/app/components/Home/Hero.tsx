@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { ArrowRight, Star, Activity, CheckCircle2, PlayCircle } from "lucide-react";
 
@@ -36,7 +37,7 @@ export default function Hero() {
               className="text-4xl sm:text-5xl lg:text-6xl font-bold text-slate-900 leading-[1.1] mb-6 tracking-tight"
             >
               Master IELTS with <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">
+              <span className="text-transparent bg-clip-text bg-linear-to-r from-blue-600 to-indigo-600">
                 Precision & Confidence
               </span>
             </motion.h1>
@@ -105,15 +106,18 @@ export default function Hero() {
             {/* Main Image with Professional Frame */}
             <div className="relative w-full max-w-md mx-auto">
               <div className="absolute inset-0 bg-blue-600 rounded-[2.5rem] rotate-3 opacity-10 scale-105"></div>
-              <div className="relative rounded-[2rem] overflow-hidden shadow-2xl border-[6px] border-white">
-                <img
+              <div className="relative rounded-4xl overflow-hidden shadow-2xl border-[6px] border-white aspect-4/5">
+                <Image
                   src="/Hero/student-online2.jpg"
                   alt="IELTS Success"
-                  className="w-full h-auto object-cover"
+                  fill
+                  priority
+                  sizes="(max-width: 1024px) 90vw, 520px"
+                  className="object-cover"
                 />
 
                 {/* Gradient Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
+                <div className="absolute inset-0 bg-linear-to-t from-black/40 to-transparent"></div>
               </div>
 
               {/* Floating Card 1: Score */}

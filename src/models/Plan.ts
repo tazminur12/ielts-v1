@@ -146,7 +146,6 @@ const PlanSchema: Schema<IPlan> = new Schema(
 );
 
 // Index for faster queries
-PlanSchema.index({ slug: 1 });
 PlanSchema.index({ isActive: 1, displayOrder: 1 });
 PlanSchema.index({ isActive: 1, tierRank: 1 });
 

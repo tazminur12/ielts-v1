@@ -7,6 +7,8 @@ import {
   GENERATION_MODEL,
   sanitizeIeltsCandidateText,
 } from "@/lib/ieltsGeneration";
+import { rateLimitOrThrow } from "@/lib/ratelimit";
+import { withCacheHeaders } from "@/lib/httpCache";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -116,6 +118,8 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
+
+    await rateLimitOrThrow(session.user.id, "ai_generate_questions");
 
     const body = await req.json();
     const {
@@ -346,12 +350,22 @@ Output must be valid JSON only.`;
       );
     }
 
-    return NextResponse.json({
-      questions,
-      count: questions.length,
-      ...(warnings.length ? { warnings } : {}),
-    });
+    return withCacheHeaders(
+      NextResponse.json({
+        questions,
+        count: questions.length,
+        ...(warnings.length ? { warnings } : {}),
+      }),
+      { kind: "no-store" }
+    );
   } catch (error: unknown) {
+    if ((error as any)?.message === "rate_limited") {
+      const retryAfter = Number((error as any)?.retryAfter || 30);
+      return NextResponse.json(
+        { message: "Too many requests. Please slow down.", error: "rate_limited" },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      );
+    }
     console.error("AI generate-questions error:", error);
     const msg =
       error instanceof Error ? error.message : "AI generation failed";

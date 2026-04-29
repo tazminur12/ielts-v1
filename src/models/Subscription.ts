@@ -117,6 +117,7 @@ const SubscriptionSchema: Schema<ISubscription> = new Schema(
 
 // Index for faster queries
 SubscriptionSchema.index({ userId: 1, status: 1 });
+SubscriptionSchema.index({ userId: 1, status: 1, endDate: 1 });
 SubscriptionSchema.index({ endDate: 1, status: 1 });
 
 const Subscription: Model<ISubscription> =

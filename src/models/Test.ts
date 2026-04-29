@@ -110,8 +110,10 @@ const TestSchema: Schema<ITest> = new Schema(
   }
 );
 
-TestSchema.index({ examType: 1, module: 1, status: 1 });
-TestSchema.index({ slug: 1 }, { unique: true });
+// Query patterns:
+// - public list: status + examType + module, sorted by createdAt desc
+// - admin list: examType/module/status filters, sorted by createdAt desc
+TestSchema.index({ status: 1, examType: 1, module: 1, createdAt: -1 });
 
 // Delete cached model to force rebuild with updated schema (avoids stale enum errors)
 delete (mongoose.models as Record<string, unknown>).Test;

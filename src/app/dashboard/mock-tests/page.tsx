@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import useSWR from "swr";
 import {
   BookOpen,
   CheckCircle2,
@@ -90,17 +91,45 @@ function CardSkeleton() {
 
 export default function StudentMockTestsPage() {
   const { data: session } = useSession();
-  const [tests, setTests] = useState<Test[]>([]);
-  const [accessibleSlugs, setAccessibleSlugs] = useState<string[]>([]);
-  const [plansBySlug, setPlansBySlug] = useState<Record<string, PlanMeta>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [pagination, setPagination] = useState({ total: 0, pages: 1, page: 1 });
+  const [page, setPage] = useState(1);
 
   const [search, setSearch] = useState("");
   const [accessFilter, setAccessFilter] = useState<"all" | "unlocked" | "locked">("all");
 
   const isLoggedIn = !!session?.user;
+
+  const fetcher = async (url: string) => {
+    const res = await fetch(url);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.message || data?.error || "Failed to load tests");
+    return data as {
+      tests: Test[];
+      accessibleSlugs: string[];
+      plansBySlug: Record<string, PlanMeta>;
+      pagination: { total: number; pages: number; page: number; limit: number };
+    };
+  };
+
+  const url = useMemo(() => {
+    const params = new URLSearchParams({
+      examType: "mock",
+      page: String(page),
+      limit: "12",
+    });
+    return `/api/tests?${params}`;
+  }, [page]);
+
+  const { data, error, isLoading, isValidating, mutate } = useSWR(url, fetcher, {
+    keepPreviousData: true,
+    dedupingInterval: 20_000,
+    revalidateOnFocus: false,
+  });
+
+  const tests = useMemo(() => data?.tests ?? [], [data?.tests]);
+  const accessibleSlugs = useMemo(() => data?.accessibleSlugs ?? [], [data?.accessibleSlugs]);
+  const plansBySlug = useMemo(() => data?.plansBySlug ?? {}, [data?.plansBySlug]);
+  const pagination = data?.pagination || { total: 0, pages: 1, page, limit: 12 };
+  const loading = isLoading || (isValidating && !data);
 
   const isUnlocked = useCallback(
     (test: Test) => accessibleSlugs.includes(test.accessLevel) || test.accessLevel === "free",
@@ -117,34 +146,6 @@ export default function StudentMockTestsPage() {
       ? "bg-amber-50 text-amber-900 border-amber-200"
       : "bg-slate-50 text-slate-700 border-slate-200";
   };
-
-  const fetchTests = async (page = 1) => {
-    setLoading(true);
-    setError("");
-    try {
-      const params = new URLSearchParams({
-        examType: "mock",
-        page: String(page),
-        limit: "12",
-      });
-
-      const res = await fetch(`/api/tests?${params}`);
-      if (!res.ok) throw new Error("Failed to load tests");
-      const data = await res.json();
-      setTests(data.tests || []);
-      setAccessibleSlugs(data.accessibleSlugs || []);
-      setPlansBySlug(data.plansBySlug || {});
-      setPagination(data.pagination || { total: 0, pages: 1, page: 1 });
-    } catch (e: any) {
-      setError(e?.message || "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchTests(1);
-  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -245,7 +246,8 @@ export default function StudentMockTestsPage() {
             onClick={() => {
               setSearch("");
               setAccessFilter("all");
-              fetchTests(1);
+              setPage(1);
+              void mutate();
             }}
             className="inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50"
             type="button"
@@ -259,9 +261,11 @@ export default function StudentMockTestsPage() {
       {/* Error */}
       {error && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 flex items-center justify-between gap-3">
-          <p className="text-sm font-medium text-rose-700">{error}</p>
+          <p className="text-sm font-medium text-rose-700">
+            {error instanceof Error ? error.message : "Something went wrong"}
+          </p>
           <button
-            onClick={() => fetchTests(pagination.page)}
+            onClick={() => void mutate()}
             className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700"
           >
             Try again
@@ -422,7 +426,7 @@ export default function StudentMockTestsPage() {
             <button
               title="Previous page"
               disabled={pagination.page <= 1}
-              onClick={() => fetchTests(pagination.page - 1)}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
               className="p-2 sm:px-4 sm:py-2 text-sm font-semibold rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 disabled:opacity-40 disabled:hover:bg-transparent"
             >
               <span className="hidden sm:inline">Previous</span>
@@ -433,7 +437,7 @@ export default function StudentMockTestsPage() {
               {Array.from({ length: pagination.pages }, (_, i) => i + 1).map((p) => (
                 <button
                   key={p}
-                  onClick={() => fetchTests(p)}
+                    onClick={() => setPage(p)}
                   className={`w-10 h-10 rounded-lg text-sm font-bold transition-all ${
                     p === pagination.page
                       ? "bg-blue-600 text-white shadow-md"
@@ -448,7 +452,7 @@ export default function StudentMockTestsPage() {
             <button
               title="Next page"
               disabled={pagination.page >= pagination.pages}
-              onClick={() => fetchTests(pagination.page + 1)}
+              onClick={() => setPage((p) => Math.min(pagination.pages, p + 1))}
               className="p-2 sm:px-4 sm:py-2 text-sm font-semibold rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 disabled:opacity-40 disabled:hover:bg-transparent"
             >
               <span className="hidden sm:inline">Next</span>

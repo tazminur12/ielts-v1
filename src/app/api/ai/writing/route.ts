@@ -7,6 +7,8 @@ import Attempt from "@/models/Attempt";
 import { evaluateWriting } from "@/lib/aiEvaluation";
 // Ensure Question model is loaded
 import Question from "@/models/Question";
+import { rateLimitOrThrow } from "@/lib/ratelimit";
+import { withCacheHeaders } from "@/lib/httpCache";
 
 // POST /api/ai/writing
 // Body: { attemptId, questionId }
@@ -14,6 +16,8 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+
+    await rateLimitOrThrow(session.user.id, "ai_writing");
     
     await connectDB();
 
@@ -83,11 +87,21 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({
-      evaluation,
-      answer: updatedAnswer,
-    });
+    return withCacheHeaders(
+      NextResponse.json({
+        evaluation,
+        answer: updatedAnswer,
+      }),
+      { kind: "no-store" }
+    );
   } catch (error: any) {
+    if (error?.message === "rate_limited") {
+      const retryAfter = Number(error?.retryAfter || 30);
+      return NextResponse.json(
+        { message: "Too many requests. Please slow down." },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      );
+    }
     console.error("Writing AI evaluation error:", error);
     return NextResponse.json({ message: error.message }, { status: 500 });
   }
