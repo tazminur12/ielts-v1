@@ -5,7 +5,9 @@ import { getToken } from "next-auth/jwt";
 export async function middleware(request: NextRequest) {
   const token = await getToken({
     req: request,
-    secret: process.env.NEXTAUTH_SECRET,
+    // In production, missing/incorrect secret causes token to be null and can create
+    // "login works but dashboard redirects back to login" loops.
+    secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
   });
 
   const { pathname } = request.nextUrl;
