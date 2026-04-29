@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import useSWR from "swr";
 import {
   Clock, BarChart, Lock, PlayCircle, Star,
   Filter, ChevronLeft, ChevronRight, BookOpen,
@@ -77,47 +78,44 @@ export default function PracticeModulePage() {
   const params = useParams();
   const moduleSlug = params?.module as string; 
   
-  const [tests, setTests] = useState<Test[]>([]);
-  const [accessibleSlugs, setAccessibleSlugs] = useState<string[]>([]);
-  const [plansBySlug, setPlansBySlug] = useState<Record<string, PlanMeta>>({});
   const [filter, setFilter] = useState("All");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [pagination, setPagination] = useState({ total: 0, pages: 1, page: 1 });
+  const [page, setPage] = useState(1);
 
-  const fetchTests = async (page = 1, typeFilter = "") => {
-    setLoading(true);
-    setError("");
-    try {
-      const queryParams = new URLSearchParams({ 
-        examType: "practice", 
-        page: String(page), 
-        limit: "12",
-        module: moduleSlug
-      });
-      // the filter is for tags like Academic/General
-      if (typeFilter && typeFilter !== "All") queryParams.set("type", typeFilter);
-
-      const res = await fetch(`/api/tests?${queryParams}`, { cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.message || data?.error || "Failed to load tests");
-      setTests(data.tests || []);
-      setAccessibleSlugs(data.accessibleSlugs || []);
-      setPlansBySlug(data.plansBySlug || {});
-      setPagination(data.pagination || { total: 0, pages: 1, page: 1 });
-    } catch (e: any) {
-      setError(e.message || "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+  const fetcher = async (url: string) => {
+    const res = await fetch(url);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.message || data?.error || "Failed to load tests");
+    return data as {
+      tests: Test[];
+      accessibleSlugs: string[];
+      plansBySlug: Record<string, PlanMeta>;
+      pagination: { total: number; pages: number; page: number; limit: number };
+    };
   };
 
-  useEffect(() => {
-    if (moduleSlug) {
-      fetchTests(1, filter);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, moduleSlug]);
+  const url = useMemo(() => {
+    if (!moduleSlug) return null;
+    const queryParams = new URLSearchParams({
+      examType: "practice",
+      page: String(page),
+      limit: "12",
+      module: moduleSlug,
+    });
+    if (filter && filter !== "All") queryParams.set("type", filter);
+    return `/api/tests?${queryParams}`;
+  }, [moduleSlug, page, filter]);
+
+  const { data, error, isLoading, isValidating, mutate } = useSWR(url, fetcher, {
+    keepPreviousData: true,
+    dedupingInterval: 20_000,
+    revalidateOnFocus: false,
+  });
+
+  const tests = data?.tests || [];
+  const accessibleSlugs = data?.accessibleSlugs || [];
+  const plansBySlug = data?.plansBySlug || {};
+  const pagination = data?.pagination || { total: 0, pages: 1, page, limit: 12 };
+  const loading = isLoading || (isValidating && !data);
 
   const isUnlocked = (test: Test) =>
     accessibleSlugs.includes(test.accessLevel) || test.accessLevel === "free";
@@ -187,9 +185,9 @@ export default function PracticeModulePage() {
         {/* Error */}
         {error && (
           <div className="text-center py-12 text-red-500">
-            <p>{error}</p>
+            <p>{error instanceof Error ? error.message : "Something went wrong"}</p>
             <button
-              onClick={() => fetchTests(1, filter)}
+              onClick={() => void mutate()}
               className="mt-3 text-sm text-blue-600 hover:underline"
             >
               Try again
@@ -343,7 +341,7 @@ export default function PracticeModulePage() {
             <button
               title="Previous page"
               disabled={pagination.page <= 1}
-              onClick={() => fetchTests(pagination.page - 1, filter)}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
               className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ChevronLeft size={18} />
@@ -351,7 +349,7 @@ export default function PracticeModulePage() {
             {Array.from({ length: pagination.pages }, (_, i) => i + 1).map((p) => (
               <button
                 key={p}
-                onClick={() => fetchTests(p, filter)}
+                onClick={() => setPage(p)}
                 className={`w-9 h-9 rounded-lg text-sm font-medium transition-all ${
                   p === pagination.page
                     ? "bg-blue-600 text-white shadow"
@@ -364,7 +362,7 @@ export default function PracticeModulePage() {
             <button
               title="Next page"
               disabled={pagination.page >= pagination.pages}
-              onClick={() => fetchTests(pagination.page + 1, filter)}
+              onClick={() => setPage((p) => Math.min(pagination.pages, p + 1))}
               className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ChevronRight size={18} />

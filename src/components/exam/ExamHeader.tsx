@@ -2,6 +2,7 @@
 
 import { useExam } from "./ExamContext";
 import { Clock, User } from "lucide-react";
+import Image from "next/image";
 
 export const ExamHeader = () => {
   const { timeLeft, currentModule, isExamActive } = useExam();
@@ -27,7 +28,7 @@ export const ExamHeader = () => {
     <header className="bg-[#1e293b] text-white p-4 flex justify-between items-center shadow-md select-none">
       <div className="flex items-center space-x-4">
         <div className="flex items-center space-x-2">
-           <img src="/file.svg" alt="Logo" className="h-8 w-8 invert" />
+           <Image src="/file.svg" alt="Logo" width={32} height={32} className="invert" />
            <span className="font-bold text-lg hidden md:block">IELTS Simulator</span>
         </div>
         <div className="bg-slate-700 px-3 py-1 rounded text-sm uppercase font-semibold tracking-wide">

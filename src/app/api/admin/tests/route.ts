@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectDB from "@/lib/mongodb";
 import Test from "@/models/Test";
+import { bumpCacheBuster } from "@/lib/cacheBusters";
 
 const ADMIN_ROLES = ["admin", "super-admin", "staff"];
 
@@ -122,6 +123,7 @@ export async function POST(req: NextRequest) {
       createdBy: session.user.id,
     });
 
+    await bumpCacheBuster("tests");
     return NextResponse.json(test, { status: 201 });
   } catch (error: any) {
     return NextResponse.json({ message: error.message }, { status: 500 });

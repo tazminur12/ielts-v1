@@ -6,6 +6,7 @@ import Test from "@/models/Test";
 import Section from "@/models/Section";
 import QuestionGroup from "@/models/QuestionGroup";
 import Question from "@/models/Question";
+import { bumpCacheBuster } from "@/lib/cacheBusters";
 
 const ADMIN_ROLES = ["admin", "super-admin", "staff"];
 
@@ -72,6 +73,7 @@ export async function PATCH(
       return NextResponse.json({ message: "Test not found" }, { status: 404 });
     }
 
+    await bumpCacheBuster("tests");
     return NextResponse.json(test);
   } catch (error: any) {
     return NextResponse.json({ message: error.message }, { status: 500 });
@@ -100,6 +102,7 @@ export async function DELETE(
       Question.deleteMany({ testId: id }),
     ]);
 
+    await bumpCacheBuster("tests");
     return NextResponse.json({ message: "Test deleted successfully" });
   } catch (error: any) {
     return NextResponse.json({ message: error.message }, { status: 500 });

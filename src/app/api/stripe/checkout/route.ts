@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { getClientIp } from "@/lib/clientIp";
+import { rateLimitOrThrow } from "@/lib/ratelimit";
+import { withCacheHeaders } from "@/lib/httpCache";
 
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
@@ -13,6 +16,8 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
+
+    await rateLimitOrThrow(session.user.id || getClientIp(req), "stripe_checkout");
 
     const { planSlug, billingCycle, planName, price } = await req.json();
 
@@ -53,12 +58,22 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({
-      success: true,
-      sessionId: checkoutSession.id,
-      url: checkoutSession.url,
-    });
+    return withCacheHeaders(
+      NextResponse.json({
+        success: true,
+        sessionId: checkoutSession.id,
+        url: checkoutSession.url,
+      }),
+      { kind: "no-store" }
+    );
   } catch (error: any) {
+    if (error?.message === "rate_limited") {
+      const retryAfter = Number(error?.retryAfter || 30);
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please slow down." },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      );
+    }
     console.error("Stripe checkout error:", error);
     return NextResponse.json(
       {

@@ -3,18 +3,41 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import dbConnect from "@/lib/mongodb";
 import Plan from "@/models/Plan";
+import { withCacheHeaders } from "@/lib/httpCache";
+import { redisDelete, redisGetJson, redisSetJson } from "@/lib/redisCache";
 
 // GET all active plans
 export async function GET(req: NextRequest) {
   try {
-    await dbConnect();
-
     const { searchParams } = new URL(req.url);
     const includeInactive = searchParams.get("includeInactive") === "1";
 
-    const plans = await Plan.find(includeInactive ? {} : { isActive: true })
-      .sort({ displayOrder: 1 })
-      .lean();
+    if (includeInactive) {
+      const session = await getServerSession(authOptions);
+      if (!session?.user?.role || !["super-admin", "admin"].includes(session.user.role)) {
+        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      }
+      await dbConnect();
+      const plans = await Plan.find({}).sort({ displayOrder: 1 }).lean();
+      return withCacheHeaders(
+        NextResponse.json({ success: true, data: plans }),
+        { kind: "private-no-store" }
+      );
+    }
+
+    const cacheKey = "ielts:plans:active:v1";
+    const cached = await redisGetJson<any[]>(cacheKey);
+    if (cached) {
+      return withCacheHeaders(NextResponse.json({ success: true, data: cached }), {
+        kind: "public",
+        sMaxAge: 60,
+        swr: 600,
+      });
+    }
+
+    await dbConnect();
+    const plans = await Plan.find({ isActive: true }).sort({ displayOrder: 1 }).lean();
+    await redisSetJson(cacheKey, plans, 120);
 
     return NextResponse.json({
       success: true,
@@ -97,6 +120,11 @@ export async function POST(req: NextRequest) {
       trialDays: trialDays || 0,
       isPremium: isPremium || false,
     });
+
+    await Promise.all([
+      redisDelete("ielts:plans:active:v1"),
+      redisDelete("ielts:plans:meta:v1"),
+    ]);
 
     return NextResponse.json(
       {

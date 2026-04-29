@@ -7,6 +7,9 @@ import Section from "@/models/Section";
 import QuestionGroup from "@/models/QuestionGroup";
 import Question from "@/models/Question";
 import Plan from "@/models/Plan";
+import { withCacheHeaders } from "@/lib/httpCache";
+import { redisGetJson, redisSetJson } from "@/lib/redisCache";
+import { getCacheBuster } from "@/lib/cacheBusters";
 
 // GET /api/tests/[id]  — full test with sections, groups, questions (NO correct answers)
 export async function GET(
@@ -15,8 +18,44 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    await connectDB();
     const { id } = await params;
+
+    const testsBuster = await getCacheBuster("tests");
+    const cacheKey = `ielts:tests:full:v1:${testsBuster}:${id}`;
+    const cached = await redisGetJson<{
+      test: any;
+      sections: any[];
+      groups: any[];
+      questions: any[];
+    }>(cacheKey);
+
+    if (cached?.test) {
+      // Guests can only load tests available on the lowest (free) plan.
+      if (!session) {
+        const freeSlugKey = "ielts:plans:freeSlug:v1";
+        let freeSlug = await redisGetJson<string>(freeSlugKey);
+        if (!freeSlug) {
+          await connectDB();
+          const freePlan = (await Plan.findOne({ isActive: true })
+            .sort({ displayOrder: 1 })
+            .select("slug")
+            .lean()) as { slug: string } | null;
+          freeSlug = freePlan?.slug ?? "free";
+          await redisSetJson(freeSlugKey, freeSlug, 300);
+        }
+
+        if (String(cached.test.accessLevel) !== String(freeSlug)) {
+          return NextResponse.json(
+            { message: "Please login to access this test" },
+            { status: 401 }
+          );
+        }
+      }
+
+      return withCacheHeaders(NextResponse.json(cached), { kind: "private-no-store" });
+    }
+
+    await connectDB();
 
     const test = await Test.findOne({ _id: id, status: "published" })
       .select("-createdBy")
@@ -28,11 +67,16 @@ export async function GET(
 
     // Guests can only load tests available on the lowest (free) plan.
     if (!session) {
-      const freePlan = await Plan.findOne({ isActive: true })
-        .sort({ displayOrder: 1 })
-        .select("slug")
-        .lean() as { slug: string } | null;
-      const freeSlug = freePlan?.slug ?? "free";
+      const freeSlugKey = "ielts:plans:freeSlug:v1";
+      let freeSlug = await redisGetJson<string>(freeSlugKey);
+      if (!freeSlug) {
+        const freePlan = (await Plan.findOne({ isActive: true })
+          .sort({ displayOrder: 1 })
+          .select("slug")
+          .lean()) as { slug: string } | null;
+        freeSlug = freePlan?.slug ?? "free";
+        await redisSetJson(freeSlugKey, freeSlug, 300);
+      }
       if (String(test.accessLevel) !== String(freeSlug)) {
         return NextResponse.json({ message: "Please login to access this test" }, { status: 401 });
       }
@@ -56,7 +100,9 @@ export async function GET(
         .lean(),
     ]);
 
-    return NextResponse.json({ test, sections, groups, questions });
+    const payload = { test, sections, groups, questions };
+    await redisSetJson(cacheKey, payload, 120);
+    return withCacheHeaders(NextResponse.json(payload), { kind: "private-no-store" });
   } catch (error: any) {
     return NextResponse.json({ message: error.message }, { status: 500 });
   }

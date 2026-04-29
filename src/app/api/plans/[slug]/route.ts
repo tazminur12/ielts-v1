@@ -4,6 +4,8 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import dbConnect from "@/lib/mongodb";
 import Plan from "@/models/Plan";
 import Subscription from "@/models/Subscription";
+import { withCacheHeaders } from "@/lib/httpCache";
+import { redisDelete, redisGetJson, redisSetJson } from "@/lib/redisCache";
 
 function isSuperAdmin(session: any) {
   return session?.user?.role === "super-admin";
@@ -15,9 +17,19 @@ export async function GET(
   context: { params: Promise<{ slug: string }> }
 ) {
   try {
-    await dbConnect();
     const { slug } = await context.params;
 
+    const cacheKey = `ielts:plans:bySlug:v1:${slug}`;
+    const cached = await redisGetJson<any>(cacheKey);
+    if (cached) {
+      return withCacheHeaders(NextResponse.json({ success: true, data: cached }), {
+        kind: "public",
+        sMaxAge: 60,
+        swr: 600,
+      });
+    }
+
+    await dbConnect();
     const plan = await Plan.findOne({ slug, isActive: true }).lean();
 
     if (!plan) {
@@ -30,9 +42,11 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      data: plan,
+    await redisSetJson(cacheKey, plan, 120);
+    return withCacheHeaders(NextResponse.json({ success: true, data: plan }), {
+      kind: "public",
+      sMaxAge: 60,
+      swr: 600,
     });
   } catch (error: any) {
     console.error("Error fetching plan:", error);
@@ -77,6 +91,12 @@ export async function PUT(
         { status: 404 }
       );
     }
+
+    await Promise.all([
+      redisDelete("ielts:plans:active:v1"),
+      redisDelete("ielts:plans:meta:v1"),
+      redisDelete(`ielts:plans:bySlug:v1:${slug}`),
+    ]);
 
     return NextResponse.json({
       success: true,
@@ -133,6 +153,11 @@ export async function DELETE(
       }
 
       await Plan.deleteOne({ _id: planDoc._id });
+      await Promise.all([
+        redisDelete("ielts:plans:active:v1"),
+        redisDelete("ielts:plans:meta:v1"),
+        redisDelete(`ielts:plans:bySlug:v1:${slug}`),
+      ]);
       return NextResponse.json({ success: true, message: "Plan permanently deleted" });
     }
 
@@ -148,6 +173,12 @@ export async function DELETE(
         { status: 404 }
       );
     }
+
+    await Promise.all([
+      redisDelete("ielts:plans:active:v1"),
+      redisDelete("ielts:plans:meta:v1"),
+      redisDelete(`ielts:plans:bySlug:v1:${slug}`),
+    ]);
 
     return NextResponse.json({
       success: true,
