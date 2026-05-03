@@ -378,7 +378,7 @@ Difficulty: ${difficulty || "medium"}
 STRICT REQUIREMENTS (must follow exactly):
 - 3 passages (partNumber 1..3)
 - Total questions = 40 with distribution: Passage 1 = 13, Passage 2 = 13, Passage 3 = 14
-- Each passage must be 700–1000 words in "passage"
+- Each passage must be 700–1000 words in "passage" (aim ~850). Before returning, count the words and ensure each passage is within range.
 - Use "${base}" as the base sectionTitle and append the partNumber (e.g. "${base} 1", "${base} 2", "${base} 3").
 - Use authentic IELTS rubrics and realistic topics (not a generic essay about the topic)
 - Objective questions must include correctAnswer
@@ -740,6 +740,120 @@ function countWords(input: string): number {
     .filter(Boolean).length;
 }
 
+async function rewriteReadingPassagesToWordRange(args: {
+  passages: Array<{ partNumber: number; passage: string }>;
+  topic: string;
+  difficulty: string;
+  ieltsType: string;
+  minWords: number;
+  maxWords: number;
+  targetWords: number;
+}) {
+  let current = new Map<number, string>(
+    args.passages.map((p) => [p.partNumber, sanitizeIeltsCandidateText(String(p.passage || ""))])
+  );
+
+  const clampRounds = 3;
+  for (let round = 0; round < clampRounds; round++) {
+    const invalid = Array.from(current.entries())
+      .map(([partNumber, passage]) => ({
+        partNumber,
+        passage,
+        wordCount: countWords(passage),
+      }))
+      .filter((p) => p.wordCount < args.minWords || p.wordCount > args.maxWords);
+
+    if (invalid.length === 0) return current;
+
+    const completion = await openai.chat.completions.create({
+      model: GENERATION_MODEL,
+      messages: [
+        { role: "system", content: AUTHENTIC_IELTS_SYSTEM },
+        {
+          role: "user",
+          content: `Rewrite and adjust EACH IELTS Reading passage below so that it is ${args.minWords}–${args.maxWords} words (target ~${args.targetWords} words).
+
+Constraints:
+- Keep the same topic and meaning; do not contradict facts already stated.
+- Natural IELTS reading style: academic magazine / report tone, coherent paragraphs, no bullet lists.
+- Do not add questions or answers.
+- Do not add headings like "Passage" or "Section"; just the passage text.
+- If a passage is too short, append new paragraphs at the END until it reaches the target range.
+- If a passage is too long, shorten by removing non-essential sentences while preserving meaning.
+- Before returning, ensure the word count of EACH passage is within range.
+
+Topic focus: ${args.topic}
+Difficulty: ${args.difficulty}
+IELTS type: ${args.ieltsType}
+
+Return ONLY valid JSON (no markdown) in this shape:
+{ "passages": [ { "partNumber": 1, "passage": "..." } ] }
+
+Passages to adjust (with current wordCount):
+${JSON.stringify(invalid)}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0,
+      max_tokens: 12000,
+    });
+
+    const txt = completion.choices[0].message.content;
+    if (!txt) throw new Error("Empty response while repairing reading passage length.");
+    const parsed = JSON.parse(txt) as Record<string, unknown>;
+    const rawPassages = Array.isArray(parsed.passages) ? parsed.passages : [];
+    for (const p of rawPassages) {
+      if (!p || typeof p !== "object") continue;
+      const pn = Number((p as { partNumber?: unknown }).partNumber || 0);
+      const passage = sanitizeIeltsCandidateText(String((p as { passage?: unknown }).passage || ""));
+      if (pn > 0 && passage.trim().length > 0) current.set(pn, passage);
+    }
+  }
+
+  return current;
+}
+
+async function maybeAutoFixReadingPassages(args: {
+  full: z.infer<typeof AIGeneratedFullMockSchema>;
+  topic: string;
+  difficulty: string;
+  ieltsType: string;
+}) {
+  const type = (v: unknown) => String(v || "").toLowerCase();
+  const readingSections = args.full.sections.filter((s) => type(s.sectionType).includes("reading"));
+  if (readingSections.length === 0) return args.full;
+
+  const needsFix = readingSections.some((s) => {
+    const wc = countWords(String(s.passage || ""));
+    return wc < 700 || wc > 1000;
+  });
+  if (!needsFix) return args.full;
+
+  const toFix: Array<{ partNumber: number; passage: string }> = [];
+  for (const s of readingSections) {
+    const pn = Number(s.partNumber || 0) || 0;
+    const original = String(s.passage || "");
+    const wc = countWords(original);
+    if (wc < 700 || wc > 1000) toFix.push({ partNumber: pn, passage: original });
+  }
+  const fixed = await rewriteReadingPassagesToWordRange({
+    passages: toFix,
+    topic: args.topic,
+    difficulty: args.difficulty,
+    ieltsType: args.ieltsType,
+    minWords: 700,
+    maxWords: 1000,
+    targetWords: 850,
+  });
+  for (const s of readingSections) {
+    const pn = Number(s.partNumber || 0) || 0;
+    const newPassage = fixed.get(pn);
+    if (newPassage) s.passage = newPassage;
+  }
+
+  return args.full;
+}
+
 function flattenQuestions(section: z.infer<typeof AIGeneratedSectionSchema>): Array<z.infer<typeof AIGeneratedQuestionSchema>> {
   const groups = Array.isArray(section.groups) ? section.groups : [];
   return groups.flatMap((g) => (Array.isArray(g.questions) ? g.questions : []));
@@ -780,7 +894,10 @@ function validateQuestionsBasics(sections: Array<z.infer<typeof AIGeneratedSecti
   }
 }
 
-function validateFullMockParity(input: z.infer<typeof AIGeneratedFullMockSchema>) {
+function validateFullMockParity(
+  input: z.infer<typeof AIGeneratedFullMockSchema>,
+  opts?: { enforceReadingWordCount?: boolean }
+) {
   const sections = input.sections;
   const listening = sections.filter((s) => String(s.sectionType).toLowerCase().includes("listening"));
   const reading = sections.filter((s) => String(s.sectionType).toLowerCase().includes("reading"));
@@ -808,10 +925,15 @@ function validateFullMockParity(input: z.infer<typeof AIGeneratedFullMockSchema>
       throw new Error("Reading must have question distribution 13/13/14 across passages 1-3.");
     }
   }
-  for (const s of readingOrdered) {
-    const wc = countWords(String(s.passage || ""));
-    if (wc < 650 || wc > 1100) {
-      throw new Error("Each reading passage must be 700–1000 words.");
+  if (opts?.enforceReadingWordCount !== false) {
+    const readingWcViolations: string[] = [];
+    for (const s of readingOrdered) {
+      const pn = Number(s.partNumber || 0) || 0;
+      const wc = countWords(String(s.passage || ""));
+      if (wc < 700 || wc > 1000) readingWcViolations.push(`passage ${pn}: ${wc} words`);
+    }
+    if (readingWcViolations.length > 0) {
+      throw new Error(`Reading passages word count must be 700–1000 words (${readingWcViolations.join(", ")}).`);
     }
   }
   validateQuestionsBasics(sections);
@@ -819,7 +941,8 @@ function validateFullMockParity(input: z.infer<typeof AIGeneratedFullMockSchema>
 
 function validateOfficialModuleParity(
   module: "listening" | "reading" | "writing" | "speaking",
-  input: z.infer<typeof AIGeneratedFullMockSchema>
+  input: z.infer<typeof AIGeneratedFullMockSchema>,
+  opts?: { enforceReadingWordCount?: boolean }
 ) {
   const sections = input.sections;
   const type = (v: unknown) => String(v || "").toLowerCase();
@@ -848,8 +971,17 @@ function validateOfficialModuleParity(
       if (pn !== i + 1) throw new Error("Reading passages must have partNumber 1..3.");
       const c = flattenQuestions(ordered[i]).length;
       if (c !== expected[i]) throw new Error("Reading must have question distribution 13/13/14.");
-      const wc = countWords(String(ordered[i].passage || ""));
-      if (wc < 650 || wc > 1100) throw new Error("Each reading passage must be 700–1000 words.");
+    }
+    if (opts?.enforceReadingWordCount !== false) {
+      const wcViolations: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const pn = Number(ordered[i]?.partNumber || 0);
+        const wc = countWords(String(ordered[i].passage || ""));
+        if (wc < 700 || wc > 1000) wcViolations.push(`passage ${pn}: ${wc} words`);
+      }
+      if (wcViolations.length > 0) {
+        throw new Error(`Reading passages word count must be 700–1000 words (${wcViolations.join(", ")}).`);
+      }
     }
     validateQuestionsBasics(reading);
     return;
@@ -890,7 +1022,10 @@ function validateOfficialModuleParity(
   validateQuestionsBasics(speaking);
 }
 
-export async function POST(req: Request) {
+export async function generateTest(
+  req: Request,
+  forcedExamType?: "mock" | "practice"
+) {
   try {
     const session = await getServerSession(authOptions);
     if (!session || !["admin", "super-admin"].includes(session.user?.role as string)) {
@@ -906,7 +1041,7 @@ export async function POST(req: Request) {
       accessLevel,
       questionCount = 5,
       questionTypes = ["mixed"],
-      examType = "practice",
+      examType: examTypeRaw = "practice",
       ieltsType = "Academic",
       listeningTopic,
       listeningTitle,
@@ -922,6 +1057,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Module is required" }, { status: 400 });
     }
 
+    const examType = forcedExamType || String(examTypeRaw || "practice");
+    if (examType !== "mock" && examType !== "practice") {
+      return NextResponse.json({ success: false, error: "Invalid examType" }, { status: 400 });
+    }
+    if (forcedExamType === "mock" && String(module) !== "full") {
+      return NextResponse.json(
+        { success: false, error: 'Mock generation route requires module="full".' },
+        { status: 400 }
+      );
+    }
+    if (forcedExamType === "practice" && String(module) === "full") {
+      return NextResponse.json(
+        { success: false, error: 'Practice generation route does not support module="full".' },
+        { status: 400 }
+      );
+    }
+
     const resolvedTitle =
       title ||
       `IELTS ${examType === "mock" ? "Mock" : "Practice"} — ${topic || "General"} (${module})`;
@@ -931,6 +1083,7 @@ export async function POST(req: Request) {
     let prompt = "";
     const isOfficialPracticeModule =
       examType === "practice" && ["listening", "reading", "writing", "speaking"].includes(String(module));
+    const enforceReadingWordCount = false;
 
     if (module === "full") {
       const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -990,22 +1143,30 @@ export async function POST(req: Request) {
       module === "full"
         ? 16000
         : isOfficialPracticeModule && module === "reading"
-          ? 14000
+          ? 16000
           : isOfficialPracticeModule && module === "listening"
             ? 12000
           : 8192;
 
     for (let attempt = 0; attempt < attemptLimit; attempt++) {
       try {
+        const isReadingWordCountError =
+          module === "reading" &&
+          /reading passages word count must be 700.?1000 words/i.test(lastValidationError);
         const shouldRepair =
-          attempt >= 2 &&
+          ((attempt >= 2 && !isReadingWordCountError) || (attempt >= 1 && isReadingWordCountError)) &&
           isOfficialPracticeModule &&
           (module === "reading" || module === "listening") &&
           lastJsonText.length > 0;
 
         const extraGuidance =
           attempt > 0 && module === "reading" && /700.?1000/i.test(lastValidationError)
-            ? '\n\nExtra requirement: For EACH reading_passage, "passage" MUST be 800–900 words (aim ~850). Do NOT output shorter summaries.'
+            ? '\n\nExtra requirement: For EACH reading_passage, "passage" MUST be 820–900 words (aim ~850) and within the strict 700–1000 validation range. Do NOT output shorter summaries.'
+            : "";
+
+        const repairFocus =
+          shouldRepair && isReadingWordCountError
+            ? '\n\nRepair focus: ONLY edit the "passage" strings in the reading_passage sections to meet the 700–1000 word requirement (target 820–900). Do not change any group titles, instructions, questions, options, correctAnswer, marks, section count, partNumber, or question distribution. If a passage is too short, append additional paragraphs at the END that add consistent detail without contradicting earlier content.'
             : "";
 
         const userPrompt = shouldRepair
@@ -1014,6 +1175,8 @@ export async function POST(req: Request) {
 Your previous JSON failed strict validation: ${lastValidationError}
 
 Repair the JSON below by making the MINIMUM necessary changes to satisfy all requirements. Do not remove required sections or question counts. Preserve the schema shape. Return ONLY valid JSON (no markdown).
+
+${repairFocus}
 
 JSON to repair:
 ${lastJsonText}
@@ -1043,15 +1206,34 @@ ${extraGuidance}`
         }
         lastJsonText = responseContent;
 
-        const parsed = JSON.parse(responseContent) as Record<string, unknown>;
+        let parsed = JSON.parse(responseContent) as Record<string, unknown>;
         if (module === "full") {
-          const full = AIGeneratedFullMockSchema.parse(parsed);
-          validateFullMockParity(full);
+          let full = AIGeneratedFullMockSchema.parse(parsed);
+          if (enforceReadingWordCount) {
+            full = await maybeAutoFixReadingPassages({
+              full,
+              topic: String(topic || "General"),
+              difficulty: String(difficulty || "medium"),
+              ieltsType: String(ieltsType || "Academic"),
+            });
+          }
+          validateFullMockParity(full, { enforceReadingWordCount });
+          parsed = full as unknown as Record<string, unknown>;
         } else if (isOfficialPracticeModule) {
-          const full = AIGeneratedFullMockSchema.parse(parsed);
-          validateOfficialModuleParity(module, full);
+          let full = AIGeneratedFullMockSchema.parse(parsed);
+          if (module === "reading" && enforceReadingWordCount) {
+            full = await maybeAutoFixReadingPassages({
+              full,
+              topic: String(topic || "General"),
+              difficulty: String(difficulty || "medium"),
+              ieltsType: String(ieltsType || "Academic"),
+            });
+          }
+          validateOfficialModuleParity(module, full, { enforceReadingWordCount });
+          parsed = full as unknown as Record<string, unknown>;
         }
 
+        lastJsonText = JSON.stringify(parsed);
         aiData = parsed;
         break;
       } catch (e: any) {
@@ -1228,4 +1410,8 @@ ${extraGuidance}`
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
+}
+
+export async function POST(req: Request) {
+  return generateTest(req);
 }
