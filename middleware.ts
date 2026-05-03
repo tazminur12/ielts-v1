@@ -3,6 +3,12 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
 export async function middleware(request: NextRequest) {
+  const requestId =
+    request.headers.get("x-request-id") ||
+    ((globalThis as any).crypto?.randomUUID ? (globalThis as any).crypto.randomUUID() : String(Date.now()));
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
+
   const token = await getToken({
     req: request,
     // In production, missing/incorrect secret causes token to be null and can create
@@ -12,6 +18,18 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
+  const next = () => {
+    const res = NextResponse.next({ request: { headers: requestHeaders } });
+    res.headers.set("x-request-id", requestId);
+    return res;
+  };
+
+  const redirect = (url: URL) => {
+    const res = NextResponse.redirect(url);
+    res.headers.set("x-request-id", requestId);
+    return res;
+  };
+
   // Public paths that don't require authentication
   const publicPathExact = ["/", "/pricing", "/about", "/login", "/signup"];
   const publicPathPrefixes = ["/api/auth"];
@@ -20,11 +38,11 @@ export async function middleware(request: NextRequest) {
     publicPathExact.includes(pathname) ||
     publicPathPrefixes.some((prefix) => pathname.startsWith(prefix));
 
-  if (isPublicPath) return NextResponse.next();
+  if (isPublicPath) return next();
 
   // Free trial exam routes (guest allowed). Actual access is enforced by API.
   if (pathname === "/exam" || pathname.startsWith("/exam/")) {
-    return NextResponse.next();
+    return next();
   }
 
   // Protected routes - require authentication
@@ -34,7 +52,7 @@ export async function middleware(request: NextRequest) {
   if (isProtectedPath && !token) {
     const url = new URL("/login", request.url);
     url.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(url);
+    return redirect(url);
   }
 
   // Onboarding enforcement for students
@@ -48,22 +66,22 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith("/exam");
 
     if (!allowedDuringOnboarding) {
-      return NextResponse.redirect(new URL("/onboarding", request.url));
+      return redirect(new URL("/onboarding", request.url));
     }
   }
 
   if (token && isStudent && isOnboarded && pathname === "/onboarding") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return redirect(new URL("/dashboard", request.url));
   }
 
   // Admin routes - require admin role
   if (pathname.startsWith("/dashboard/admin")) {
     if (!token || !["super-admin", "admin"].includes(token.role as string)) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+      return redirect(new URL("/dashboard", request.url));
     }
   }
 
-  return NextResponse.next();
+  return next();
 }
 
 export const config = {

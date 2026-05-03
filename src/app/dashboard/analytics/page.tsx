@@ -1,362 +1,217 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import {
-  TrendingUp,
-  // TrendingDown,
-  Users,
-  DollarSign,
-  BookOpen,
-  Activity,
-  Calendar,
-  Download,
-  Loader2,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { AlertCircle, BarChart3, Loader2, Target, Users } from "lucide-react";
+
+type AdminAnalytics = {
+  totals: {
+    totalUsers: number;
+    attemptsWeek: number;
+    attemptsMonth: number;
+  };
+  engagement: {
+    activeUsers7d: number;
+    completionRate7d: number;
+    completionRate30d: number;
+  };
+  averageBandPerTest: Array<{
+    testId: string;
+    title: string;
+    module: string;
+    examType: string;
+    avgBand: number;
+    attempts: number;
+  }>;
+  mostAttemptedTests: Array<{ testId: string; title: string; count: number }>;
+  questionErrors: Array<{
+    questionId: string;
+    questionNumber?: number;
+    questionType?: string;
+    questionText?: string;
+    wrong: number;
+  }>;
+};
 
 export default function AnalyticsPage() {
-  const [timeRange, setTimeRange] = useState<string>("7days");
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState("");
+  const [data, setData] = useState<AdminAnalytics | null>(null);
 
   useEffect(() => {
-    fetchAnalytics();
+    (async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const res = await fetch("/api/admin/analytics");
+        const payload = await res.json();
+        if (!res.ok || !payload?.success) {
+          throw new Error(payload?.error || "Failed to load analytics");
+        }
+        setData(payload.data);
+      } catch (e: any) {
+        setError(e?.message || "Failed to load analytics");
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  const fetchAnalytics = async () => {
-    try {
-      const response = await fetch("/api/admin/analytics");
-      const result = await response.json();
-      if (result.success) {
-        setData(result.data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch analytics:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const avgBandChart = useMemo(() => {
+    return (data?.averageBandPerTest || []).slice(0, 10).map((x) => ({
+      name: x.title.length > 18 ? `${x.title.slice(0, 18)}…` : x.title,
+      band: x.avgBand,
+      attempts: x.attempts,
+    }));
+  }, [data]);
+
+  const mostAttemptedChart = useMemo(() => {
+    return (data?.mostAttemptedTests || []).slice(0, 10).map((x) => ({
+      name: x.title.length > 18 ? `${x.title.slice(0, 18)}…` : x.title,
+      count: x.count,
+    }));
+  }, [data]);
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <div className="flex items-center justify-center py-24">
+        <div className="inline-flex items-center gap-3 rounded-3xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+          <p className="text-sm font-semibold text-slate-700">Loading analytics…</p>
+        </div>
       </div>
     );
   }
 
   if (!data) {
-    return <div className="p-6 text-center text-gray-500">Failed to load analytics data.</div>;
+    return (
+      <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-4 flex items-start gap-3">
+        <AlertCircle className="w-5 h-5 text-rose-600 mt-0.5" />
+        <div>
+          <p className="text-sm font-extrabold text-rose-800">Failed to load</p>
+          <p className="text-sm font-medium text-rose-700 mt-1">{error || "Unknown error"}</p>
+        </div>
+      </div>
+    );
   }
 
-  // Mock vs Real data assignments
-  const { stats, revenueData, userGrowthData, topProducts, recentActivity, usageByModule } = data;
-
-  const maxUsage = Math.max(...(usageByModule as any[]).map((m: any) => m.count));
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Admin</p>
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 mt-1">
+          Analytics
+        </h1>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard label="Students" value={String(data.totals.totalUsers)} icon={<Users className="w-5 h-5 text-blue-700" />} />
+        <MetricCard label="Attempts (7d)" value={String(data.totals.attemptsWeek)} icon={<Target className="w-5 h-5 text-emerald-700" />} />
+        <MetricCard label="Attempts (30d)" value={String(data.totals.attemptsMonth)} icon={<Target className="w-5 h-5 text-amber-700" />} />
+        <MetricCard label="Active users (7d)" value={String(data.engagement.activeUsers7d)} icon={<Users className="w-5 h-5 text-slate-700" />} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="rounded-4xl border border-slate-200 bg-white shadow-sm p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-extrabold text-slate-900">Average band per test</p>
+              <p className="text-xs text-slate-500 mt-1">Top 10 by attempt volume</p>
+            </div>
+            <BarChart3 className="w-5 h-5 text-slate-400" />
+          </div>
+          <div className="mt-4 h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={avgBandChart} layout="vertical" margin={{ left: 12, right: 12 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis type="number" domain={[0, 9]} />
+                <YAxis type="category" dataKey="name" width={120} />
+                <Tooltip />
+                <Bar dataKey="band" fill="#1a3a5c" radius={[8, 8, 8, 8]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="rounded-4xl border border-slate-200 bg-white shadow-sm p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-extrabold text-slate-900">Most attempted tests</p>
+              <p className="text-xs text-slate-500 mt-1">Top 10</p>
+            </div>
+            <BarChart3 className="w-5 h-5 text-slate-400" />
+          </div>
+          <div className="mt-4 h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={mostAttemptedChart} layout="vertical" margin={{ left: 12, right: 12 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis type="number" />
+                <YAxis type="category" dataKey="name" width={120} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#334155" radius={[8, 8, 8, 8]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-4xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100">
+          <p className="text-sm font-extrabold text-slate-900">Highest error-rate questions (by wrong answers)</p>
+          <p className="text-xs text-slate-500 mt-1">Top 15</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-extrabold text-slate-500 uppercase tracking-wider">Question</th>
+                <th className="px-6 py-3 text-left text-xs font-extrabold text-slate-500 uppercase tracking-wider">Type</th>
+                <th className="px-6 py-3 text-right text-xs font-extrabold text-slate-500 uppercase tracking-wider">Wrong</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-slate-100">
+              {(data.questionErrors || []).map((q) => (
+                <tr key={q.questionId} className="hover:bg-slate-50/60 transition-colors">
+                  <td className="px-6 py-4">
+                    <p className="text-sm font-extrabold text-slate-900">
+                      {q.questionNumber ? `Q${q.questionNumber}` : "Q"}{" "}
+                      {q.questionText ? q.questionText.slice(0, 90) : "—"}
+                      {q.questionText && q.questionText.length > 90 ? "…" : ""}
+                    </p>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-slate-600 font-semibold capitalize">
+                    {(q.questionType || "").replace(/_/g, " ")}
+                  </td>
+                  <td className="px-6 py-4 text-right text-sm font-extrabold text-slate-900 tabular-nums">
+                    {q.wrong}
+                  </td>
+                </tr>
+              ))}
+              {(!data.questionErrors || data.questionErrors.length === 0) && (
+                <tr>
+                  <td colSpan={3} className="px-6 py-10 text-center text-slate-500">
+                    No data yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
+  return (
+    <div className="rounded-4xl border border-slate-200 bg-white/90 backdrop-blur p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Analytics Dashboard
-          </h1>
-          <p className="text-gray-500">
-            Monitor sales, usage, and platform performance
-          </p>
+          <p className="text-xs font-extrabold uppercase tracking-widest text-slate-500">{label}</p>
+          <p className="text-2xl font-extrabold text-slate-900 tabular-nums mt-1">{value}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <select
-            value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-          >
-            <option value="7days">Last 7 Days</option>
-            <option value="30days">Last 30 Days</option>
-            <option value="90days">Last 90 Days</option>
-            <option value="year">This Year</option>
-          </select>
-          <button className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm">
-            <Download className="w-4 h-4 mr-2" />
-            Export
-          </button>
-        </div>
-      </div>
-
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-500">
-                Total Revenue
-              </p>
-              <h3 className="text-3xl font-bold text-gray-900 mt-1">
-                ${stats.totalRevenue.toLocaleString()}
-              </h3>
-            </div>
-            <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-              <DollarSign className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-          <div className="mt-4 flex items-center text-sm">
-            <span className="text-green-600 font-medium flex items-center">
-              <TrendingUp className="w-3 h-3 mr-1" />
-              +{stats.revenueChange}%
-            </span>
-            <span className="text-gray-400 ml-2">vs last period</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Total Users</p>
-              <h3 className="text-3xl font-bold text-gray-900 mt-1">
-                {stats.totalUsers.toLocaleString()}
-              </h3>
-            </div>
-            <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
-              <Users className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-          <div className="mt-4 flex items-center text-sm">
-            <span className="text-green-600 font-medium flex items-center">
-              <TrendingUp className="w-3 h-3 mr-1" />
-              +{stats.usersChange}%
-            </span>
-            <span className="text-gray-400 ml-2">vs last period</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-500">
-                Active Users
-              </p>
-              <h3 className="text-3xl font-bold text-gray-900 mt-1">
-                {stats.activeUsers}
-              </h3>
-            </div>
-            <div className="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center">
-              <Activity className="w-6 h-6 text-purple-600" />
-            </div>
-          </div>
-          <div className="mt-4 flex items-center text-sm">
-            <span className="text-green-600 font-medium flex items-center">
-              <TrendingUp className="w-3 h-3 mr-1" />
-              +{stats.activeChange}%
-            </span>
-            <span className="text-gray-400 ml-2">vs last period</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-500">
-                Tests Taken
-              </p>
-              <h3 className="text-3xl font-bold text-gray-900 mt-1">
-                {stats.totalTests.toLocaleString()}
-              </h3>
-            </div>
-            <div className="w-12 h-12 bg-orange-50 rounded-lg flex items-center justify-center">
-              <BookOpen className="w-6 h-6 text-orange-600" />
-            </div>
-          </div>
-          <div className="mt-4 flex items-center text-sm">
-            <span className="text-green-600 font-medium flex items-center">
-              <TrendingUp className="w-3 h-3 mr-1" />
-              +{stats.testsChange}%
-            </span>
-            <span className="text-gray-400 ml-2">vs last period</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Revenue Chart */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-bold text-gray-900">
-                Revenue Overview
-              </h3>
-              <p className="text-sm text-gray-500">Monthly revenue trends</p>
-            </div>
-          </div>
-          <div className="space-y-4">
-            {revenueData.map((data: any, index: number) => (
-              <div key={index}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-600">
-                    {data.month}
-                  </span>
-                  <span className="text-sm font-bold text-gray-900">
-                    ${data.revenue.toLocaleString()}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-3">
-                  <div
-                    className="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full transition-all"
-                    style={{
-                      width: `${(data.revenue / 15000) * 100}%`,
-                    }}
-                  ></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* User Growth Chart */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-bold text-gray-900">User Growth</h3>
-              <p className="text-sm text-gray-500">
-                User registration trends
-              </p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            {userGrowthData.map((data: any, index: number) => (
-              <div key={index}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-600">
-                    {data.month}
-                  </span>
-                  <span className="text-sm font-bold text-gray-900">
-                    {data.users.toLocaleString()} users
-                  </span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-2.5">
-                  <div
-                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-2.5 rounded-full transition-all"
-                    style={{
-                      width: `${(data.users / 1500) * 100}%`,
-                    }}
-                  ></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Products */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-bold text-gray-900">
-                Top Products
-              </h3>
-              <p className="text-sm text-gray-500">Best selling plans</p>
-            </div>
-          </div>
-          <div className="space-y-4">
-            {topProducts.map((product: any, index: number) => (
-              <div
-                key={index}
-                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-gray-900">
-                    {product.name}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {product.sales} sales
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-green-600">
-                    ${product.revenue.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Usage by Module */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-bold text-gray-900">
-                Usage by Module
-              </h3>
-              <p className="text-sm text-gray-500">
-                Student activity breakdown
-              </p>
-            </div>
-          </div>
-          <div className="space-y-4">
-            {usageByModule.map((module: any, index: number) => (
-              <div key={index}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">
-                    {module.module}
-                  </span>
-                  <span className="text-sm font-bold text-gray-900">
-                    {module.count.toLocaleString()}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-3">
-                  <div
-                    className={`${module.color} h-3 rounded-full transition-all`}
-                    style={{
-                      width: `${(module.count / maxUsage) * 100}%`,
-                    }}
-                  ></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h3 className="text-lg font-bold text-gray-900">
-              Recent Activity
-            </h3>
-            <p className="text-sm text-gray-500">
-              Latest user actions on the platform
-            </p>
-          </div>
-        </div>
-        <div className="space-y-3">
-          {recentActivity.map((activity: any, index: number) => (
-            <div
-              key={index}
-              className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
-                  <span className="text-blue-600 font-semibold text-sm">
-                    {activity.user[0]}
-                  </span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    {activity.user}
-                  </p>
-                  <p className="text-xs text-gray-500">{activity.action}</p>
-                </div>
-              </div>
-              <div className="flex items-center text-xs text-gray-400">
-                <Calendar className="w-3 h-3 mr-1" />
-                {activity.time}
-              </div>
-            </div>
-          ))}
+        <div className="h-11 w-11 rounded-3xl border border-slate-200 bg-slate-50 flex items-center justify-center">
+          {icon}
         </div>
       </div>
     </div>

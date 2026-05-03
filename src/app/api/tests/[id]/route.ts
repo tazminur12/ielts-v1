@@ -7,6 +7,7 @@ import Section from "@/models/Section";
 import QuestionGroup from "@/models/QuestionGroup";
 import Question from "@/models/Question";
 import Plan from "@/models/Plan";
+import Subscription from "@/models/Subscription";
 import { withCacheHeaders } from "@/lib/httpCache";
 import { redisGetJson, redisSetJson } from "@/lib/redisCache";
 import { getCacheBuster } from "@/lib/cacheBusters";
@@ -30,25 +31,51 @@ export async function GET(
     }>(cacheKey);
 
     if (cached?.test) {
-      // Guests can only load tests available on the lowest (free) plan.
       if (!session) {
-        const freeSlugKey = "ielts:plans:freeSlug:v1";
-        let freeSlug = await redisGetJson<string>(freeSlugKey);
-        if (!freeSlug) {
+        if (String(cached.test.accessLevel) !== "free") {
+          return NextResponse.json({ message: "Please login to access this test" }, { status: 401 });
+        }
+      } else if (session.user?.id) {
+        const entKey = `ielts:entitlements:v1:${session.user.id}`;
+        let accessibleSlugs = await redisGetJson<string[]>(entKey);
+        if (!accessibleSlugs) {
           await connectDB();
-          const freePlan = (await Plan.findOne({ isActive: true })
-            .sort({ displayOrder: 1 })
-            .select("slug")
-            .lean()) as { slug: string } | null;
-          freeSlug = freePlan?.slug ?? "free";
-          await redisSetJson(freeSlugKey, freeSlug, 300);
+          const [activePlans, subscription] = await Promise.all([
+            Plan.find({ isActive: true }).select("slug tierRank displayOrder").lean(),
+            Subscription.findOne({
+              userId: session.user.id,
+              status: { $in: ["active", "trial"] },
+              endDate: { $gte: new Date() },
+            })
+              .populate({ path: "planId", select: "slug tierRank displayOrder" })
+              .lean() as any,
+          ]);
+
+          const safeTierRank = (p: { tierRank?: number; displayOrder?: number } | null | undefined): number => {
+            const tr = Number((p as any)?.tierRank);
+            if (Number.isFinite(tr) && tr >= 1) return tr;
+            const d = Number((p as any)?.displayOrder);
+            if (Number.isFinite(d) && d >= 1) return d;
+            return 1;
+          };
+
+          if (subscription?.planId) {
+            const userTierRank = safeTierRank(subscription.planId);
+            accessibleSlugs = (activePlans as any[])
+              .filter((p) => safeTierRank(p) <= userTierRank)
+              .map((p) => String(p.slug));
+          } else {
+            accessibleSlugs = [];
+          }
+          if (!accessibleSlugs.includes("free")) accessibleSlugs = ["free", ...accessibleSlugs];
+          if (accessibleSlugs.length === 0) accessibleSlugs = ["free"];
+          await redisSetJson(entKey, accessibleSlugs, 120);
+        } else if (!accessibleSlugs.includes("free")) {
+          accessibleSlugs = ["free", ...accessibleSlugs];
         }
 
-        if (String(cached.test.accessLevel) !== String(freeSlug)) {
-          return NextResponse.json(
-            { message: "Please login to access this test" },
-            { status: 401 }
-          );
+        if (!accessibleSlugs.includes(String(cached.test.accessLevel))) {
+          return NextResponse.json({ message: "Upgrade required" }, { status: 403 });
         }
       }
 
@@ -65,20 +92,50 @@ export async function GET(
       return NextResponse.json({ message: "Test not found" }, { status: 404 });
     }
 
-    // Guests can only load tests available on the lowest (free) plan.
     if (!session) {
-      const freeSlugKey = "ielts:plans:freeSlug:v1";
-      let freeSlug = await redisGetJson<string>(freeSlugKey);
-      if (!freeSlug) {
-        const freePlan = (await Plan.findOne({ isActive: true })
-          .sort({ displayOrder: 1 })
-          .select("slug")
-          .lean()) as { slug: string } | null;
-        freeSlug = freePlan?.slug ?? "free";
-        await redisSetJson(freeSlugKey, freeSlug, 300);
-      }
-      if (String(test.accessLevel) !== String(freeSlug)) {
+      if (String(test.accessLevel) !== "free") {
         return NextResponse.json({ message: "Please login to access this test" }, { status: 401 });
+      }
+    } else if (session.user?.id) {
+      const entKey = `ielts:entitlements:v1:${session.user.id}`;
+      let accessibleSlugs = await redisGetJson<string[]>(entKey);
+      if (!accessibleSlugs) {
+        const [activePlans, subscription] = await Promise.all([
+          Plan.find({ isActive: true }).select("slug tierRank displayOrder").lean(),
+          Subscription.findOne({
+            userId: session.user.id,
+            status: { $in: ["active", "trial"] },
+            endDate: { $gte: new Date() },
+          })
+            .populate({ path: "planId", select: "slug tierRank displayOrder" })
+            .lean() as any,
+        ]);
+
+        const safeTierRank = (p: { tierRank?: number; displayOrder?: number } | null | undefined): number => {
+          const tr = Number((p as any)?.tierRank);
+          if (Number.isFinite(tr) && tr >= 1) return tr;
+          const d = Number((p as any)?.displayOrder);
+          if (Number.isFinite(d) && d >= 1) return d;
+          return 1;
+        };
+
+        if (subscription?.planId) {
+          const userTierRank = safeTierRank(subscription.planId);
+          accessibleSlugs = (activePlans as any[])
+            .filter((p) => safeTierRank(p) <= userTierRank)
+            .map((p) => String(p.slug));
+        } else {
+          accessibleSlugs = [];
+        }
+        if (!accessibleSlugs.includes("free")) accessibleSlugs = ["free", ...accessibleSlugs];
+        if (accessibleSlugs.length === 0) accessibleSlugs = ["free"];
+        await redisSetJson(entKey, accessibleSlugs, 120);
+      } else if (!accessibleSlugs.includes("free")) {
+        accessibleSlugs = ["free", ...accessibleSlugs];
+      }
+
+      if (!accessibleSlugs.includes(String(test.accessLevel))) {
+        return NextResponse.json({ message: "Upgrade required" }, { status: 403 });
       }
     }
 

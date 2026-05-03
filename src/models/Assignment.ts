@@ -21,6 +21,10 @@ const AssignmentSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    fileKey: {
+      type: String,
+      required: false,
+    },
     description: {
       type: String,
       required: false,

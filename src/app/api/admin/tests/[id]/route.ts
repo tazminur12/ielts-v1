@@ -7,6 +7,7 @@ import Section from "@/models/Section";
 import QuestionGroup from "@/models/QuestionGroup";
 import Question from "@/models/Question";
 import { bumpCacheBuster } from "@/lib/cacheBusters";
+import { validateIeltsParityByTestId } from "@/lib/ieltsParity";
 
 const ADMIN_ROLES = ["admin", "super-admin", "staff"];
 
@@ -62,6 +63,16 @@ export async function PATCH(
     // Prevent changing examType/module after creation (breaking change)
     delete body.examType;
     delete body.slug;
+
+    if (body.status === "published") {
+      const r = await validateIeltsParityByTestId(id);
+      if (!r.ok) {
+        return NextResponse.json(
+          { message: "IELTS parity validation failed", errors: r.errors, warnings: r.warnings },
+          { status: 400 }
+        );
+      }
+    }
 
     const test = await Test.findByIdAndUpdate(
       id,

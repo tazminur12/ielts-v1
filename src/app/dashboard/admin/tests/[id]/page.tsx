@@ -19,8 +19,8 @@ interface Test {
 
 interface Section {
   _id: string; testId: string; title: string; order: number;
-  sectionType: string; instructions?: string; audioUrl?: string;
-  passageText?: string; totalQuestions: number;
+  sectionType: string; partNumber?: number; instructions?: string; audioUrl?: string;
+  audioTranscript?: string; passageText?: string; totalQuestions: number;
 }
 
 interface QuestionGroup {
@@ -272,6 +272,30 @@ export default function AdminTestDetailPage() {
     if (newStatus === "published" && test.totalQuestions === 0) {
       Swal.fire("Cannot Publish", "Add at least one question first.", "warning"); return;
     }
+
+    if (newStatus === "published") {
+      try {
+        const parityRes = await fetch(`/api/admin/tests/${id}/parity`);
+        const parity = await parityRes.json();
+        if (parityRes.ok && parity && parity.ok === false) {
+          const list = Array.isArray(parity.errors) ? parity.errors : [];
+          await Swal.fire({
+            title: "Cannot Publish",
+            html: `<div style="text-align:left">
+              <p style="margin:0 0 8px 0">Official IELTS structure checks failed:</p>
+              <ul style="padding-left:18px;margin:0">${list.map((e: string) => `<li>${e}</li>`).join("")}</ul>
+            </div>`,
+            icon: "error",
+            confirmButtonColor: "#dc2626",
+          });
+          return;
+        }
+      } catch {
+        await Swal.fire("Error", "Could not validate IELTS structure. Try again.", "error");
+        return;
+      }
+    }
+
     const confirm = await Swal.fire({
       title: newStatus === "published" ? "Publish test?" : "Set to Draft?",
       icon: "question", showCancelButton: true,
@@ -282,7 +306,25 @@ export default function AdminTestDetailPage() {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: newStatus }),
     });
-    setTest(await res.json());
+    const data = await res.json();
+    if (!res.ok) {
+      const list = Array.isArray(data?.errors) ? data.errors : [];
+      if (list.length > 0) {
+        await Swal.fire({
+          title: "Cannot Publish",
+          html: `<div style="text-align:left">
+            <p style="margin:0 0 8px 0">${data?.message || "IELTS parity validation failed"}:</p>
+            <ul style="padding-left:18px;margin:0">${list.map((e: string) => `<li>${e}</li>`).join("")}</ul>
+          </div>`,
+          icon: "error",
+          confirmButtonColor: "#dc2626",
+        });
+      } else {
+        await Swal.fire("Error", data?.message || "Failed to update status.", "error");
+      }
+      return;
+    }
+    setTest(data);
   };
 
   /* ── delete section ─────────────────────────────── */
@@ -855,7 +897,8 @@ function AddSectionModal({ testId, nextOrder, module: testModule, onClose, onSuc
 
   const [form, setForm] = useState({
     title: "", sectionType: defaultType, order: nextOrder,
-    instructions: "", passageText: "",
+    partNumber: nextOrder,
+    instructions: "", passageText: "", audioTranscript: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -895,11 +938,33 @@ function AddSectionModal({ testId, nextOrder, module: testModule, onClose, onSuc
               onChange={(e) => setForm({ ...form, order: Number(e.target.value) })} className={INPUT}/>
           </Field>
         </div>
+        <Field label="Part Number">
+          <input
+            aria-label="Part Number"
+            type="number"
+            min={1}
+            value={form.partNumber}
+            onChange={(e) => setForm({ ...form, partNumber: Number(e.target.value) })}
+            className={INPUT}
+          />
+        </Field>
         <Field label="Instructions">
           <textarea aria-label="Instructions" value={form.instructions}
             onChange={(e) => setForm({ ...form, instructions: e.target.value })}
             rows={2} placeholder="Section-level instructions…" className={TEXTAREA}/>
         </Field>
+        {form.sectionType === "listening_part" && (
+          <Field label="Audio Transcript (recommended)">
+            <textarea
+              aria-label="Audio Transcript"
+              value={form.audioTranscript}
+              onChange={(e) => setForm({ ...form, audioTranscript: e.target.value })}
+              rows={6}
+              placeholder="Paste listening transcript here (used for parity checks and optional TTS)…"
+              className={TEXTAREA}
+            />
+          </Field>
+        )}
         {form.sectionType === "reading_passage" && (
           <Field label="Passage Text">
             <textarea aria-label="Passage Text" value={form.passageText}
@@ -921,8 +986,10 @@ function EditSectionModal({ section, onClose, onSuccess }: {
 }) {
   const [form, setForm] = useState({
     title: section.title,
+    partNumber: section.partNumber || 1,
     instructions: section.instructions || "",
     passageText: section.passageText || "",
+    audioTranscript: section.audioTranscript || "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -947,11 +1014,32 @@ function EditSectionModal({ section, onClose, onSuccess }: {
           <input required aria-label="Section Title" value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })} className={INPUT}/>
         </Field>
+        <Field label="Part Number">
+          <input
+            aria-label="Part Number"
+            type="number"
+            min={1}
+            value={form.partNumber}
+            onChange={(e) => setForm({ ...form, partNumber: Number(e.target.value) })}
+            className={INPUT}
+          />
+        </Field>
         <Field label="Instructions">
           <textarea value={form.instructions}
             onChange={(e) => setForm({ ...form, instructions: e.target.value })}
             rows={3} placeholder="Section instructions…" className={TEXTAREA}/>
         </Field>
+        {section.sectionType === "listening_part" && (
+          <Field label="Audio Transcript">
+            <textarea
+              value={form.audioTranscript}
+              onChange={(e) => setForm({ ...form, audioTranscript: e.target.value })}
+              rows={10}
+              placeholder="Listening transcript…"
+              className={TEXTAREA}
+            />
+          </Field>
+        )}
         {section.sectionType === "reading_passage" && (
           <Field label="Passage Text (full)">
             <textarea value={form.passageText}

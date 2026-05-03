@@ -29,12 +29,14 @@ export async function PATCH(
       const audioFile = formData.get("audio") as File | null;
 
       const fields = [
-        "title", "order", "instructions", "passageText",
+        "title", "order", "partNumber", "instructions", "passageText",
         "audioTranscript", "timeLimit", "totalQuestions",
       ];
       fields.forEach((f) => {
         const val = formData.get(f);
-        if (val !== null) updates[f] = f === "order" || f === "timeLimit" || f === "totalQuestions" ? Number(val) : val;
+        if (val !== null) {
+          updates[f] = f === "order" || f === "partNumber" || f === "timeLimit" || f === "totalQuestions" ? Number(val) : val;
+        }
       });
 
       if (audioFile) {

@@ -4,6 +4,7 @@ export interface IQuestion extends Document {
   testId: mongoose.Types.ObjectId;
   sectionId: mongoose.Types.ObjectId;
   groupId: mongoose.Types.ObjectId;
+  questionBankId?: mongoose.Types.ObjectId; // Reference to question bank
   questionNumber: number;  // Global question number within the test (1-40)
   questionText: string;
   questionType:
@@ -35,6 +36,10 @@ export interface IQuestion extends Document {
   explanation?: string;
   marks: number; // points for this question
   order: number;
+  // New fields for enhanced analytics
+  skill?: "listening" | "reading" | "writing" | "speaking";
+  bandLevel?: number; // 1-9 band level difficulty
+  topic?: string; // Topic tag for filtering
   createdAt: Date;
   updatedAt: Date;
 }
@@ -58,6 +63,10 @@ const QuestionSchema: Schema<IQuestion> = new Schema(
       ref: "QuestionGroup",
       required: true,
       index: true,
+    },
+    questionBankId: {
+      type: Schema.Types.ObjectId,
+      ref: "QuestionBank",
     },
     questionNumber: {
       type: Number,
@@ -117,6 +126,18 @@ const QuestionSchema: Schema<IQuestion> = new Schema(
     order: {
       type: Number,
       required: true,
+    },
+    skill: {
+      type: String,
+      enum: ["listening", "reading", "writing", "speaking"],
+    },
+    bandLevel: {
+      type: Number,
+      min: 1,
+      max: 9,
+    },
+    topic: {
+      type: String,
     },
   },
   {

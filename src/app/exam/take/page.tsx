@@ -5,9 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Clock, AlertCircle, CheckCircle, Mic, MicOff, Send,
   Loader2, ChevronLeft, ChevronRight, BookOpen,
-  Headphones, PenLine, MessageSquare, FileText,
+  Headphones, PenLine, MessageSquare, FileText, Volume2,
 } from "lucide-react";
 import { effectiveTestDurationMinutes } from "@/lib/testDuration";
+import QuestionNavPanel from "@/components/exam/QuestionNavPanel";
+import { AudioPlayer } from "@/components/exam/AudioPlayer";
 
 // ─── Types (aligned with backend enums) ──────────────────────────────────────
 
@@ -188,6 +190,7 @@ function TakeExamContent() {
 
   const [test, setTest] = useState<TestData | null>(null);
   const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [attemptSessionId, setAttemptSessionId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [activeSectionIdx, setActiveSectionIdx] = useState(0);
@@ -198,15 +201,32 @@ function TakeExamContent() {
 
   const [writingTexts, setWritingTexts] = useState<Record<string, string>>({});
   const [recording, setRecording] = useState<Record<string, boolean>>({});
+  const [recordingEndsAt, setRecordingEndsAt] = useState<Record<string, number>>({});
   const [speakingDone, setSpeakingDone] = useState<Record<string, boolean>>({});
+  const [liveTurns, setLiveTurns] = useState<Record<string, { userText: string; aiText: string; aiAudioUrl: string | null }>>({});
+  const [aiSpeaking, setAiSpeaking] = useState(false);
+  const aiSpeakingRef = useRef(false);
+  const aiAudioRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<Record<string, MediaRecorder>>({});
   const audioChunksRef = useRef<Record<string, Blob[]>>({});
+  const recordingTimeoutRef = useRef<Record<string, number>>({});
+  const activeRecordingQIdRef = useRef<string | null>(null);
   const saveInFlight = useRef<Set<string>>(new Set());
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   // timerActive: true only after test loads with a non-zero duration
   const [timerActive, setTimerActive] = useState(false);
   // Ref keeps handleSubmit fresh so the auto-submit effect never uses stale closure
   const handleSubmitRef = useRef<(auto?: boolean) => Promise<void>>(async () => {});
+
+  const isSpeakingSection = useMemo(
+    () => test?.sections?.[activeSectionIdx]?.sectionType === "speaking_part",
+    [activeSectionIdx, test]
+  );
+  const isLiveInterview = mode === "live-interview" || isSpeakingSection;
+
+  // Enhanced navigation state
+  const [currentQuestion, setCurrentQuestion] = useState(1);
+  const [markedForReview, setMarkedForReview] = useState<Set<number>>(new Set());
 
   const questionNumberById = useMemo(() => {
     const map = new Map<string, number>();
@@ -221,17 +241,49 @@ function TakeExamContent() {
     return map;
   }, [test]);
 
+  const speakingMetaById = useMemo(() => {
+    const out: Record<string, { part: 1 | 2 | 3; maxSeconds: number; prepSeconds: number }> = {};
+    if (!test) return out;
+    for (const sec of test.sections ?? []) {
+      if (sec.sectionType !== "speaking_part") continue;
+      const pn = Number((sec as any).partNumber || sec.order || 1);
+      const part = (pn === 2 ? 2 : pn === 3 ? 3 : 1) as 1 | 2 | 3;
+      const defaultMax = part === 2 ? 120 : part === 3 ? 60 : 30;
+      const prepSeconds = part === 2 ? 60 : 0;
+      for (const grp of sec.groups ?? []) {
+        for (const q of grp.questions ?? []) {
+          out[String(q._id)] = {
+            part,
+            maxSeconds: typeof q.speakingDuration === "number" ? q.speakingDuration : defaultMax,
+            prepSeconds,
+          };
+        }
+      }
+    }
+    return out;
+  }, [test]);
+
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!testId) { setError("No test ID provided."); setLoading(false); return; }
 
     (async () => {
       try {
+        let initialSessionId =
+          typeof globalThis !== "undefined" && (globalThis as any).crypto?.randomUUID
+            ? (globalThis as any).crypto.randomUUID()
+            : String(Date.now());
+
+        try {
+          const stored = localStorage.getItem(`test_session:${testId}`);
+          if (stored && stored.trim()) initialSessionId = stored.trim();
+        } catch {}
+
         const [testRes, attemptRes] = await Promise.all([
           fetch(`/api/tests/${testId}`),
           fetch("/api/attempts", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-attempt-session": initialSessionId },
             body: JSON.stringify({ testId }),
           }),
         ]);
@@ -250,13 +302,63 @@ function TakeExamContent() {
           ...buildNestedTest(rawTest, sections ?? [], groups ?? [], questions ?? []),
           duration: durationMins,
         };
+        const attemptId = attemptData.attempt._id as string;
+        let sessionId = (attemptData.sessionId || initialSessionId) as string;
         setTest(nested);
-        setAttemptId(attemptData.attempt._id);
+        setAttemptId(attemptId);
+        setAttemptSessionId(sessionId);
+
+        try {
+          localStorage.setItem(`attempt_session:${attemptId}`, sessionId);
+          localStorage.setItem(`test_session:${testId}`, sessionId);
+        } catch {}
+
+        if (durationMins > 0) {
+          let stateRes = await fetch(`/api/exam/state?attemptId=${attemptId}`, {
+            headers: { "x-attempt-session": sessionId },
+          });
+
+          if (stateRes.status === 409) {
+            const takeoverSessionId =
+              typeof globalThis !== "undefined" && (globalThis as any).crypto?.randomUUID
+                ? (globalThis as any).crypto.randomUUID()
+                : String(Date.now());
+            const takeoverRes = await fetch(`/api/exam/state?attemptId=${attemptId}&takeover=1`, {
+              headers: { "x-attempt-session": takeoverSessionId },
+            });
+            if (takeoverRes.ok) {
+              sessionId = takeoverSessionId;
+              setAttemptSessionId(sessionId);
+              try {
+                localStorage.setItem(`attempt_session:${attemptId}`, sessionId);
+                localStorage.setItem(`test_session:${testId}`, sessionId);
+              } catch {}
+              stateRes = takeoverRes;
+            } else {
+              const err = await stateRes.json().catch(() => ({}));
+              setError(err?.message || "Attempt is active in another session");
+              return;
+            }
+          }
+
+          if (stateRes.ok) {
+            const state = await stateRes.json();
+            const remaining = Number(state.remainingSeconds || 0);
+            setTimeLeft(remaining);
+            if (remaining > 0 && state.status === "in_progress") setTimerActive(true);
+            if (remaining === 0 && state.status !== "in_progress") {
+              router.push(`/exam/results?attemptId=${attemptId}`);
+              return;
+            }
+          }
+        }
 
         if (attemptData.attempt.status === "in_progress") {
-          const ansRes = await fetch(`/api/answers?attemptId=${attemptData.attempt._id}`);
+          const ansRes = await fetch(`/api/answers?attemptId=${attemptId}`, {
+            headers: { "x-attempt-session": sessionId },
+          });
           if (ansRes.ok) {
-            const { answers: saved } = await ansRes.json();
+            const saved = await ansRes.json();
             const map: AnswerMap = {};
             if (Array.isArray(saved)) {
               saved.forEach((a: Record<string, string>) => {
@@ -266,27 +368,39 @@ function TakeExamContent() {
             setAnswers(map);
           }
         }
-
-        const totalSecs = durationMins > 0 ? durationMins * 60 : 0;
-        if (totalSecs > 0) {
-          // Deduct elapsed time if resuming an existing attempt
-          let remaining = totalSecs;
-          if (attemptData.resumed && attemptData.attempt.startedAt) {
-            const elapsed = Math.floor(
-              (Date.now() - new Date(attemptData.attempt.startedAt).getTime()) / 1000
-            );
-            remaining = Math.max(0, totalSecs - elapsed);
-          }
-          setTimeLeft(remaining);
-          if (remaining > 0) setTimerActive(true);
-        }
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Unknown error");
       } finally {
         setLoading(false);
       }
     })();
-  }, [testId]);
+  }, [router, testId]);
+
+  useEffect(() => {
+    if (!attemptId || !attemptSessionId || !timerActive) return;
+    const id = setInterval(async () => {
+      const res = await fetch(`/api/exam/state?attemptId=${attemptId}`, {
+        headers: { "x-attempt-session": attemptSessionId },
+      });
+      if (res.status === 409) {
+        const err = await res.json().catch(() => ({}));
+        setError(err?.message || "Attempt is active in another session");
+        setTimerActive(false);
+        return;
+      }
+      if (!res.ok) return;
+      const state = await res.json();
+      const remaining = Number(state.remainingSeconds || 0);
+      if (Number.isFinite(remaining)) {
+        setTimeLeft((prev) => (Math.abs(prev - remaining) >= 3 ? remaining : prev));
+      }
+      if (state.status !== "in_progress") {
+        setTimerActive(false);
+        router.push(`/exam/results?attemptId=${attemptId}`);
+      }
+    }, 15000);
+    return () => clearInterval(id);
+  }, [attemptId, attemptSessionId, router, timerActive]);
 
   // ── Countdown — starts only once when timerActive becomes true ────────────
   useEffect(() => {
@@ -309,6 +423,7 @@ function TakeExamContent() {
   // ── Save answer ────────────────────────────────────────────────────────────
   const saveAnswer = useCallback(async (questionId: string, value: string, questionType: string) => {
     if (!attemptId) return;
+    if (!attemptSessionId) return;
     const questionNumber = questionNumberById.get(String(questionId));
     if (questionNumber == null || !Number.isFinite(questionNumber)) return;
     if (saveInFlight.current.has(questionId)) return;
@@ -325,13 +440,13 @@ function TakeExamContent() {
     try {
       await fetch("/api/answers", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-attempt-session": attemptSessionId },
         body: JSON.stringify(body),
       });
     } finally {
       saveInFlight.current.delete(questionId);
     }
-  }, [attemptId, questionNumberById]);
+  }, [attemptId, attemptSessionId, questionNumberById]);
 
   const handleAnswer = (questionId: string, value: string, questionType: string) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
@@ -352,36 +467,170 @@ function TakeExamContent() {
   // ── Speaking ───────────────────────────────────────────────────────────────
   const startRecording = async (questionId: string) => {
     try {
+      if (isLiveInterview && aiSpeakingRef.current) {
+        alert("Please wait for the examiner to finish speaking.");
+        return;
+      }
+      if (activeRecordingQIdRef.current && activeRecordingQIdRef.current !== questionId) {
+        alert("Another speaking recording is already in progress.");
+        return;
+      }
+      if (Object.values(recording).some(Boolean) && !recording[questionId]) {
+        alert("Another speaking recording is already in progress.");
+        return;
+      }
+
+      const meta = speakingMetaById[questionId];
+      if (meta?.prepSeconds && meta.prepSeconds > 0 && attemptId) {
+        const key = `speaking_prep:${attemptId}:${questionId}`;
+        let startedAt = 0;
+        try {
+          const raw = localStorage.getItem(key);
+          startedAt = raw ? Number(raw) : 0;
+        } catch {}
+        if (!Number.isFinite(startedAt) || startedAt <= 0) {
+          startedAt = Date.now();
+          try {
+            localStorage.setItem(key, String(startedAt));
+          } catch {}
+        }
+        const endAt = startedAt + meta.prepSeconds * 1000;
+        if (Date.now() < endAt) {
+          alert("Preparation time is not finished yet.");
+          return;
+        }
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mr = new MediaRecorder(stream);
       audioChunksRef.current[questionId] = [];
       mr.ondataavailable = (e) => audioChunksRef.current[questionId].push(e.data);
-      mr.onstop = () => uploadSpeaking(questionId, stream);
+      mr.onstop = () => {
+        const t = recordingTimeoutRef.current[questionId];
+        if (t) {
+          window.clearTimeout(t);
+          delete recordingTimeoutRef.current[questionId];
+        }
+        setRecordingEndsAt((prev) => {
+          const next = { ...prev };
+          delete next[questionId];
+          return next;
+        });
+        if (activeRecordingQIdRef.current === questionId) activeRecordingQIdRef.current = null;
+        uploadSpeaking(questionId, stream);
+      };
       mr.start();
       mediaRecorderRef.current[questionId] = mr;
       setRecording((prev) => ({ ...prev, [questionId]: true }));
+      activeRecordingQIdRef.current = questionId;
+
+      const maxSeconds = speakingMetaById[questionId]?.maxSeconds ?? 60;
+      if (maxSeconds > 0) {
+        const endsAt = Date.now() + maxSeconds * 1000;
+        setRecordingEndsAt((prev) => ({ ...prev, [questionId]: endsAt }));
+        recordingTimeoutRef.current[questionId] = window.setTimeout(() => stopRecording(questionId), maxSeconds * 1000);
+      }
     } catch {
       alert("Microphone access denied.");
     }
   };
 
   const stopRecording = (questionId: string) => {
-    mediaRecorderRef.current[questionId]?.stop();
+    const t = recordingTimeoutRef.current[questionId];
+    if (t) {
+      window.clearTimeout(t);
+      delete recordingTimeoutRef.current[questionId];
+    }
+    setRecordingEndsAt((prev) => {
+      const next = { ...prev };
+      delete next[questionId];
+      return next;
+    });
+    if (activeRecordingQIdRef.current === questionId) activeRecordingQIdRef.current = null;
+    const mr = mediaRecorderRef.current[questionId];
+    if (mr && mr.state !== "inactive") {
+      mr.stop();
+    }
     setRecording((prev) => ({ ...prev, [questionId]: false }));
   };
 
   const uploadSpeaking = async (questionId: string, stream: MediaStream) => {
     stream.getTracks().forEach((t) => t.stop());
     if (!attemptId) return;
+    const meta = speakingMetaById[questionId];
+    const partNumber = meta?.part ?? 1;
     const blob = new Blob(audioChunksRef.current[questionId], { type: "audio/webm" });
     const fd = new FormData();
     fd.append("attemptId", attemptId);
+    fd.append("partNumber", String(partNumber));
     fd.append("questionId", questionId);
     fd.append("audio", blob, "speaking.webm");
     try {
-      await fetch("/api/ai/speaking", { method: "POST", body: fd });
+      if (isLiveInterview) {
+        const currentDisplay = displayNumberById.get(String(questionId)) || 0;
+        const idx = moduleQuestions.findIndex((q) => (displayNumberById.get(String(q._id)) || 0) === currentDisplay);
+        const nextQ = idx >= 0 ? moduleQuestions[idx + 1] : null;
+        const nextPrompt = nextQ ? String(nextQ.questionText || "").trim() : "";
+        if (nextPrompt) fd.append("nextPrompt", nextPrompt);
+
+        setAiSpeaking(true);
+        aiSpeakingRef.current = true;
+        if (aiAudioRef.current) {
+          aiAudioRef.current.pause();
+          aiAudioRef.current.src = "";
+          aiAudioRef.current = null;
+        }
+
+        const res = await fetch("/api/ai/speaking-interview-turn", { method: "POST", body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.message || "Live interview failed");
+
+        setLiveTurns((prev) => ({
+          ...prev,
+          [questionId]: {
+            userText: String(data?.transcribedText || "").trim(),
+            aiText: String(data?.aiText || "").trim(),
+            aiAudioUrl: data?.aiAudioUrl || null,
+          },
+        }));
+
+        if (data?.aiAudioUrl) {
+          const audio = new Audio(String(data.aiAudioUrl));
+          aiAudioRef.current = audio;
+          audio.onended = () => {
+            setAiSpeaking(false);
+            aiSpeakingRef.current = false;
+            aiAudioRef.current = null;
+            if (nextQ) {
+              const n = displayNumberById.get(String(nextQ._id));
+              if (n) handleQuestionSelect(n);
+            }
+          };
+          audio.onerror = () => {
+            setAiSpeaking(false);
+            aiSpeakingRef.current = false;
+            aiAudioRef.current = null;
+          };
+          await audio.play().catch(() => {
+            setAiSpeaking(false);
+            aiSpeakingRef.current = false;
+            aiAudioRef.current = null;
+          });
+        } else {
+          setAiSpeaking(false);
+          aiSpeakingRef.current = false;
+          if (nextQ) {
+            const n = displayNumberById.get(String(nextQ._id));
+            if (n) handleQuestionSelect(n);
+          }
+        }
+      } else {
+        await fetch("/api/speaking/upload", { method: "POST", body: fd });
+      }
       setSpeakingDone((prev) => ({ ...prev, [questionId]: true }));
     } catch {
+      setAiSpeaking(false);
+      aiSpeakingRef.current = false;
       alert("Failed to upload speaking audio. Please try again.");
     }
   };
@@ -389,6 +638,7 @@ function TakeExamContent() {
   // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async (autoSubmit = false) => {
     if (!attemptId) return;
+    if (!attemptSessionId) return;
     setSubmitting(true);
     setTimerActive(false);
     if (timerRef.current) clearInterval(timerRef.current);
@@ -407,19 +657,36 @@ function TakeExamContent() {
     try {
       const res = await fetch(`/api/attempts/${attemptId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-attempt-session": attemptSessionId },
         body: JSON.stringify({ action: "submit" }),
       });
-      if (!res.ok) throw new Error("Submission failed");
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        const msg = (data as any)?.message || "Submission failed";
+        if (msg === "Attempt is not in progress") {
+          router.push(`/exam/results?attemptId=${attemptId}`);
+          return;
+        }
+        throw new Error(msg);
+      }
       router.push(`/exam/results?attemptId=${attemptId}`);
-    } catch {
+    } catch (e: any) {
       setSubmitting(false);
-      if (!autoSubmit) alert("Failed to submit. Please try again.");
+      if (!autoSubmit) alert(e?.message || "Failed to submit. Please try again.");
     }
   };
 
   // Keep the ref in sync so auto-submit effect always calls the latest version
   useEffect(() => { handleSubmitRef.current = handleSubmit; });
+
+  useEffect(() => {
+    if (!submitting) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [submitting]);
 
   const confirmAndSubmit = () => {
     const unanswered = allQuestions().filter((q) => !answers[q._id]).length;
@@ -436,11 +703,127 @@ function TakeExamContent() {
     return test.sections.flatMap((s) => s.groups.flatMap((g) => g.questions));
   };
 
-  const answeredCount = allQuestions().filter((q) => answers[q._id]).length;
-  const totalQuestions = allQuestions().length;
   const activeSection = test?.sections[activeSectionIdx];
+  const activeModule = useMemo(() => {
+    const t = activeSection?.sectionType;
+    if (t === "listening_part") return "listening";
+    if (t === "reading_passage") return "reading";
+    if (t === "writing_task") return "writing";
+    if (t === "speaking_part") return "speaking";
+    return "listening";
+  }, [activeSection?.sectionType]);
+
+  const displayNumberById = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!test) return map;
+
+    const counters: Record<string, number> = { listening: 0, reading: 0, writing: 0, speaking: 0 };
+    for (const sec of test.sections ?? []) {
+      const mod =
+        sec.sectionType === "listening_part"
+          ? "listening"
+          : sec.sectionType === "reading_passage"
+          ? "reading"
+          : sec.sectionType === "writing_task"
+          ? "writing"
+          : "speaking";
+
+      for (const grp of sec.groups ?? []) {
+        for (const q of grp.questions ?? []) {
+          counters[mod] += 1;
+          map.set(String(q._id), counters[mod]);
+        }
+      }
+    }
+    return map;
+  }, [test]);
+
+  const moduleQuestions = useMemo(() => {
+    if (!test) return [];
+    return test.sections
+      .filter((s) => {
+        if (activeModule === "listening") return s.sectionType === "listening_part";
+        if (activeModule === "reading") return s.sectionType === "reading_passage";
+        if (activeModule === "writing") return s.sectionType === "writing_task";
+        return s.sectionType === "speaking_part";
+      })
+      .flatMap((s) => s.groups.flatMap((g) => g.questions))
+      .sort((a, b) => (displayNumberById.get(String(a._id)) || 0) - (displayNumberById.get(String(b._id)) || 0));
+  }, [activeModule, displayNumberById, test]);
+
+  const answeredCount = useMemo(() => moduleQuestions.filter((q) => answers[q._id]).length, [answers, moduleQuestions]);
+  const totalQuestions = moduleQuestions.length;
   const isCriticalTime = timerActive && timeLeft > 0 && timeLeft <= 60;   // last 1 min
   const isLowTime = timerActive && timeLeft > 60 && timeLeft < 300;       // last 5 min
+  const isAnyRecording = useMemo(() => Object.values(recording).some(Boolean), [recording]);
+  const activeSpeakingIncomplete = useMemo(() => {
+    if (!activeSection) return false;
+    if (activeSection.sectionType !== "speaking_part") return false;
+    const qs = activeSection.groups.flatMap((g) => g.questions).filter((q) => q.questionType === "speaking");
+    return qs.some((q) => !speakingDone[q._id]);
+  }, [activeSection, speakingDone]);
+
+  // Create answered questions set for navigation panel
+  const answeredQuestionsSet = useMemo(() => {
+    const set = new Set<string>();
+    moduleQuestions.forEach((q) => {
+      if (answers[q._id]) set.add(String(displayNumberById.get(String(q._id)) || 0));
+    });
+    return set;
+  }, [answers, displayNumberById, moduleQuestions]);
+
+  // Toggle mark for review
+  const handleToggleReview = useCallback((qNum: number) => {
+    setMarkedForReview((prev) => {
+      const next = new Set(prev);
+      if (next.has(qNum)) {
+        next.delete(qNum);
+      } else {
+        next.add(qNum);
+      }
+      return next;
+    });
+  }, []);
+
+  // Jump to specific question
+  const handleQuestionSelect = useCallback((qNum: number) => {
+    const targetQuestion = moduleQuestions.find((q) => (displayNumberById.get(String(q._id)) || 0) === qNum);
+    if (!targetQuestion) return;
+
+    setCurrentQuestion(qNum);
+
+    // Find the section that contains this question and switch to it
+    for (let i = 0; i < test!.sections.length; i++) {
+      const section = test!.sections[i];
+      for (const group of section.groups) {
+        if (group.questions.some((q) => q._id === targetQuestion._id)) {
+          setActiveSectionIdx(i);
+          return;
+        }
+      }
+    }
+  }, [displayNumberById, moduleQuestions, test]);
+
+  useEffect(() => {
+    if (!activeSection) return;
+    const first = activeSection.groups?.[0]?.questions?.[0];
+    if (!first?._id) return;
+    const n = displayNumberById.get(String(first._id));
+    if (n && Number.isFinite(n)) setCurrentQuestion(n);
+  }, [activeSectionIdx, activeModule, activeSection, displayNumberById]);
+
+  // Next/Previous question handlers
+  const handleNextQuestion = useCallback(() => {
+    if (currentQuestion < totalQuestions) {
+      handleQuestionSelect(currentQuestion + 1);
+    }
+  }, [currentQuestion, totalQuestions, handleQuestionSelect]);
+
+  const handlePreviousQuestion = useCallback(() => {
+    if (currentQuestion > 1) {
+      handleQuestionSelect(currentQuestion - 1);
+    }
+  }, [currentQuestion, handleQuestionSelect]);
 
   // ── Loading & Error States ─────────────────────────────────────────────────
   if (loading) {
@@ -559,17 +942,19 @@ function TakeExamContent() {
           const secTotal = sec.groups.flatMap((g) => g.questions).length;
           const secAnswered = sec.groups.flatMap((g) => g.questions).filter((q) => answers[q._id]).length;
           const active = idx === activeSectionIdx;
+          const lockForwardFromSpeaking = activeSpeakingIncomplete && idx > activeSectionIdx;
           return (
             <button
               key={sec._id}
               type="button"
               onClick={() => setActiveSectionIdx(idx)}
+              disabled={isAnyRecording || lockForwardFromSpeaking}
               aria-label={`${sectionLabel(sec.sectionType)}: ${sec.title || `Part ${sec.order}`}`}
               className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all border-b-2 min-h-[44px] ${
                 active
                   ? "text-[#c9a227] border-[#c9a227] bg-[#0c1a2e]"
                   : "text-slate-500 border-transparent hover:text-slate-200 hover:bg-[#0c1a2e]/60"
-              }`}
+              } disabled:opacity-35 disabled:cursor-not-allowed`}
             >
               {sectionIcon(sec.sectionType)}
               <span className="uppercase tracking-[0.08em] max-w-[140px] sm:max-w-none truncate">
@@ -594,9 +979,11 @@ function TakeExamContent() {
         {activeSection && (
           <SectionView
             section={activeSection}
+            attemptId={attemptId}
             answers={answers}
             writingTexts={writingTexts}
             recording={recording}
+            recordingEndsAt={recordingEndsAt}
             speakingDone={speakingDone}
             onAnswer={handleAnswer}
             onWritingChange={handleWritingChange}
@@ -604,19 +991,37 @@ function TakeExamContent() {
             onStartRecording={startRecording}
             onStopRecording={stopRecording}
             mode={mode}
+            speakingMetaById={speakingMetaById}
+            isAnyRecording={isAnyRecording}
+            displayNumberById={displayNumberById}
+            liveTurns={liveTurns}
+            isLiveInterview={isLiveInterview}
+            aiSpeaking={aiSpeaking}
           />
         )}
       </main>
 
+      {/* ── Question Navigation Panel ───────────────────────────────────── */}
+      <QuestionNavPanel
+        totalQuestions={totalQuestions}
+        currentQuestion={currentQuestion}
+        answeredQuestions={answeredQuestionsSet}
+        markedForReview={markedForReview}
+        onQuestionSelect={handleQuestionSelect}
+        onToggleReview={handleToggleReview}
+        onNext={handleNextQuestion}
+        onPrevious={handlePreviousQuestion}
+      />
+
       {/* ── Section navigation (footer) ─────────────────────────────────── */}
-      <footer className="bg-[#faf9f6] border-t-2 border-[#0c1a2e]/10 px-3 sm:px-5 py-2.5 flex items-center justify-between gap-2 shrink-0 shadow-[0_-4px_20px_rgba(12,26,46,0.06)]">
+      <footer className="bg-[#faf9f6] border-t border-slate-200 px-3 sm:px-5 py-2 flex items-center justify-between gap-2 shrink-0">
         <button
           type="button"
           onClick={() => setActiveSectionIdx((i) => Math.max(0, i - 1))}
-          disabled={activeSectionIdx === 0}
-          className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#0c1a2e] disabled:opacity-35 disabled:cursor-not-allowed hover:opacity-80 transition-opacity"
+          disabled={activeSectionIdx === 0 || isAnyRecording}
+          className="flex items-center gap-1 text-xs font-semibold text-[#0c1a2e] disabled:opacity-35 disabled:cursor-not-allowed hover:opacity-80 transition-opacity"
         >
-          <ChevronLeft size={18} /> <span className="hidden sm:inline">Previous part</span>
+          <ChevronLeft size={16} /> <span className="hidden sm:inline">Previous part</span>
         </button>
 
         <div className="flex items-center gap-1.5">
@@ -625,11 +1030,12 @@ function TakeExamContent() {
               key={i}
               type="button"
               onClick={() => setActiveSectionIdx(i)}
-              className={`h-2 rounded-full transition-all ${
+              disabled={isAnyRecording}
+              className={`h-1.5 rounded-full transition-all ${
                 i === activeSectionIdx
-                  ? "w-8 bg-[#c9a227]"
-                  : "w-2 bg-slate-300 hover:bg-slate-400"
-              }`}
+                  ? "w-6 bg-[#c9a227]"
+                  : "w-1.5 bg-slate-300 hover:bg-slate-400"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
               aria-label={`Part ${i + 1}`}
               aria-current={i === activeSectionIdx ? "step" : undefined}
             />
@@ -640,7 +1046,7 @@ function TakeExamContent() {
           <button
             type="button"
             onClick={() => setSubmitConfirm(true)}
-            className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-[#0c1a2e] bg-[#c9a227] px-3 sm:px-4 py-2 hover:bg-[#b89220] transition-colors border border-[#dfc45a]/50"
+            className="flex items-center gap-1.5 text-xs font-bold text-[#0c1a2e] bg-[#c9a227] px-3 py-1.5 hover:bg-[#b89220] transition-colors border border-[#dfc45a]/50"
           >
             End test <Send size={14} />
           </button>
@@ -652,9 +1058,10 @@ function TakeExamContent() {
                 Math.min(test.sections.length - 1, i + 1)
               )
             }
-            className="flex items-center gap-1 text-xs sm:text-sm font-semibold text-[#0c1a2e] hover:opacity-80 transition-opacity"
+            disabled={isAnyRecording || activeSpeakingIncomplete}
+            className="flex items-center gap-1 text-xs font-semibold text-[#0c1a2e] hover:opacity-80 transition-opacity disabled:opacity-35 disabled:cursor-not-allowed"
           >
-            <span className="hidden sm:inline">Next part</span> <ChevronRight size={18} />
+            <span className="hidden sm:inline">Next part</span> <ChevronRight size={16} />
           </button>
         )}
       </footer>
@@ -708,6 +1115,60 @@ function TakeExamContent() {
           </div>
         </div>
       )}
+
+      {submitting && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+          role="alertdialog"
+          aria-busy="true"
+          aria-live="polite"
+          aria-label="Submitting exam"
+        >
+          <div className="absolute inset-0 bg-[#0c1a2e]/70 backdrop-blur-md" />
+          <div className="relative w-full max-w-md">
+            <div className="absolute -inset-1 rounded-3xl bg-linear-to-br from-[#c9a227] to-[#0c1a2e] opacity-20 blur-xl" />
+            <div className="relative overflow-hidden rounded-2xl border border-white/20 bg-white/95 shadow-2xl shadow-black/20">
+              <div className="h-1 w-full bg-linear-to-r from-[#c9a227] to-[#0c1a2e] animate-pulse" />
+              <div className="px-8 py-10 text-center">
+                <div className="relative mx-auto mb-6 flex h-20 w-20 items-center justify-center">
+                  <div className="absolute inset-0 rounded-full border-2 border-[#c9a227]/30 animate-[spin_3s_linear_infinite]" />
+                  <div className="absolute inset-2 rounded-full border-2 border-dashed border-[#c9a227]/30 animate-[spin_2s_linear_infinite_reverse]" />
+                  <div className="absolute inset-0 rounded-full bg-[#c9a227]/20 animate-pulse" />
+                  <Loader2 className="relative h-9 w-9 text-[#0c1a2e] animate-spin" />
+                </div>
+
+                <h2 className="text-lg font-extrabold tracking-tight text-[#0c1a2e]">
+                  Submitting your answers
+                </h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Finalizing your attempt and preparing results — please keep this tab open.
+                </p>
+
+                <div className="mt-6 flex justify-center gap-1.5">
+                  {(
+                    [
+                      "delay-0",
+                      "delay-100",
+                      "delay-200",
+                      "delay-300",
+                      "delay-[400ms]",
+                    ] as const
+                  ).map((delayClass, i) => (
+                    <span
+                      key={i}
+                      className={`h-2 w-2 rounded-full bg-[#c9a227] animate-bounce [animation-duration:0.9s] ${delayClass}`}
+                    />
+                  ))}
+                </div>
+
+                <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full w-3/5 max-w-full rounded-full bg-linear-to-r from-[#c9a227] to-[#0c1a2e] animate-pulse" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -716,28 +1177,44 @@ function TakeExamContent() {
 
 function SectionView({
   section,
+  attemptId,
   answers,
   writingTexts,
   recording,
+  recordingEndsAt,
   speakingDone,
+  liveTurns,
   onAnswer,
   onWritingChange,
   onWritingBlur,
   onStartRecording,
   onStopRecording,
   mode,
+  speakingMetaById,
+  isAnyRecording,
+  displayNumberById,
+  isLiveInterview,
+  aiSpeaking,
 }: {
   section: Section;
+  attemptId: string | null;
   answers: AnswerMap;
   writingTexts: Record<string, string>;
   recording: Record<string, boolean>;
+  recordingEndsAt: Record<string, number>;
   speakingDone: Record<string, boolean>;
+  liveTurns: Record<string, { userText: string; aiText: string; aiAudioUrl: string | null }>;
   onAnswer: (qId: string, val: string, qType: string) => void;
   onWritingChange: (qId: string, text: string) => void;
   onWritingBlur: (qId: string) => void;
   onStartRecording: (qId: string) => void;
   onStopRecording: (qId: string) => void;
   mode: string;
+  speakingMetaById: Record<string, { part: 1 | 2 | 3; maxSeconds: number; prepSeconds: number }>;
+  isAnyRecording: boolean;
+  displayNumberById: Map<string, number>;
+  isLiveInterview: boolean;
+  aiSpeaking: boolean;
 }) {
   const isReading = section.sectionType === "reading_passage";
   const isListening = section.sectionType === "listening_part";
@@ -758,16 +1235,25 @@ function SectionView({
         <QuestionGroupView
           key={group._id}
           group={group}
+          attemptId={attemptId}
           answers={answers}
           writingTexts={writingTexts}
           recording={recording}
+          recordingEndsAt={recordingEndsAt}
           speakingDone={speakingDone}
+          liveTurns={liveTurns}
           onAnswer={onAnswer}
           onWritingChange={onWritingChange}
           onWritingBlur={onWritingBlur}
           onStartRecording={onStartRecording}
           onStopRecording={onStopRecording}
           mode={mode}
+          speakingMetaById={speakingMetaById}
+          isAnyRecording={isAnyRecording}
+          displayNumberById={displayNumberById}
+          isLiveInterview={isLiveInterview}
+          aiSpeaking={aiSpeaking}
+          forceSpeaking={isSpeaking}
         />
       ))}
     </div>
@@ -832,9 +1318,11 @@ function SectionView({
                   <p className="text-slate-400 text-xs mt-0.5">Listen once only. Answer as you listen.</p>
                 </div>
               </div>
-              <audio controls className="w-full h-10 audio-dark" src={section.audioUrl}>
-                <track kind="captions" />
-              </audio>
+              <AudioPlayer
+                src={section.audioUrl}
+                lockKey={attemptId ? `attempt:${attemptId}:section:${section._id}` : undefined}
+                singlePlay
+              />
             </div>
           )}
           {Questions}
@@ -896,35 +1384,60 @@ function SectionView({
 
 function QuestionGroupView({
   group,
+  attemptId,
   answers,
   writingTexts,
   recording,
+  recordingEndsAt,
   speakingDone,
+  liveTurns,
   onAnswer,
   onWritingChange,
   onWritingBlur,
   onStartRecording,
   onStopRecording,
   mode,
+  speakingMetaById,
+  isAnyRecording,
+  displayNumberById,
+  isLiveInterview,
+  aiSpeaking,
+  forceSpeaking,
 }: {
   group: QuestionGroup;
+  attemptId: string | null;
   answers: AnswerMap;
   writingTexts: Record<string, string>;
   recording: Record<string, boolean>;
+  recordingEndsAt: Record<string, number>;
   speakingDone: Record<string, boolean>;
+  liveTurns: Record<string, { userText: string; aiText: string; aiAudioUrl: string | null }>;
   onAnswer: (qId: string, val: string, qType: string) => void;
   onWritingChange: (qId: string, text: string) => void;
   onWritingBlur: (qId: string) => void;
   onStartRecording: (qId: string) => void;
   onStopRecording: (qId: string) => void;
   mode: string;
+  speakingMetaById: Record<string, { part: 1 | 2 | 3; maxSeconds: number; prepSeconds: number }>;
+  isAnyRecording: boolean;
+  displayNumberById: Map<string, number>;
+  isLiveInterview: boolean;
+  aiSpeaking: boolean;
+  forceSpeaking: boolean;
 }) {
+  const groupNumbers = group.questions
+    .map((q) => displayNumberById.get(String(q._id)) || 0)
+    .filter((n) => n > 0);
+  const groupStart = groupNumbers.length ? Math.min(...groupNumbers) : group.questionNumberStart;
+  const groupEnd = groupNumbers.length ? Math.max(...groupNumbers) : group.questionNumberEnd;
+  const groupTypeLabel = forceSpeaking ? "speaking" : group.questionType;
+
   return (
     <div className="bg-[#faf9f6] border border-[#d4cfc4] shadow-[0_1px_3px_rgba(12,26,46,0.06)] overflow-hidden">
       <div className="bg-[#0c1a2e] text-white px-4 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#c9a227]">
-            Questions {group.questionNumberStart}–{group.questionNumberEnd}
+            Questions {groupStart}–{groupEnd}
           </span>
           {group.title && (
             <span className="text-xs text-slate-300 font-medium truncate">
@@ -933,7 +1446,7 @@ function QuestionGroupView({
           )}
         </div>
         <span className="text-[9px] text-slate-400 uppercase font-semibold tracking-wider border border-white/15 px-2 py-0.5">
-          {group.questionType.replace(/_/g, " ")}
+          {groupTypeLabel.replace(/_/g, " ")}
         </span>
       </div>
 
@@ -973,10 +1486,14 @@ function QuestionGroupView({
             <QuestionView
               key={q._id}
               question={q}
+              displayNumber={displayNumberById.get(String(q._id)) || q.questionNumber}
               answer={answers[q._id] ?? ""}
               writingText={writingTexts[q._id] ?? ""}
               isRecording={recording[q._id] ?? false}
+              recordingEndsAt={recordingEndsAt[q._id] ?? null}
               speakingDone={speakingDone[q._id] ?? false}
+              liveTurn={liveTurns[q._id] ?? null}
+              forceSpeaking={forceSpeaking}
               matchingOptions={group.matchingOptions}
               onAnswer={onAnswer}
               onWritingChange={onWritingChange}
@@ -984,6 +1501,11 @@ function QuestionGroupView({
               onStartRecording={onStartRecording}
               onStopRecording={onStopRecording}
               mode={mode}
+              attemptId={attemptId}
+              speakingMeta={speakingMetaById[q._id] ?? null}
+              isAnyRecording={isAnyRecording}
+              isLiveInterview={isLiveInterview}
+              aiSpeaking={aiSpeaking}
             />
           ))}
         </div>
@@ -996,10 +1518,14 @@ function QuestionGroupView({
 
 function QuestionView({
   question,
+  displayNumber,
   answer,
   writingText,
   isRecording,
+  recordingEndsAt,
   speakingDone,
+  liveTurn,
+  forceSpeaking,
   matchingOptions,
   onAnswer,
   onWritingChange,
@@ -1007,12 +1533,21 @@ function QuestionView({
   onStartRecording,
   onStopRecording,
   mode,
+  attemptId,
+  speakingMeta,
+  isAnyRecording,
+  isLiveInterview,
+  aiSpeaking,
 }: {
   question: Question;
+  displayNumber: number;
   answer: string;
   writingText: string;
   isRecording: boolean;
+  recordingEndsAt: number | null;
   speakingDone: boolean;
+  liveTurn: { userText: string; aiText: string; aiAudioUrl: string | null } | null;
+  forceSpeaking: boolean;
   matchingOptions?: string[];
   onAnswer: (qId: string, val: string, qType: string) => void;
   onWritingChange: (qId: string, text: string) => void;
@@ -1020,12 +1555,138 @@ function QuestionView({
   onStartRecording: (qId: string) => void;
   onStopRecording: (qId: string) => void;
   mode: string;
+  attemptId: string | null;
+  speakingMeta: { part: 1 | 2 | 3; maxSeconds: number; prepSeconds: number } | null;
+  isAnyRecording: boolean;
+  isLiveInterview: boolean;
+  aiSpeaking: boolean;
 }) {
   const qId = question._id;
-  const qType = question.questionType;
+  const qType = forceSpeaking ? "speaking" : question.questionType;
   const isAnswered = !!answer;
 
   const effectiveMatchingOptions = matchingOptions ?? question.matchingOptions ?? [];
+
+  const [now, setNow] = useState(() => Date.now());
+
+  const prepEndAt = useMemo(() => {
+    if (qType !== "speaking") return null;
+    if (!speakingMeta || speakingMeta.prepSeconds <= 0) return null;
+    if (speakingDone) return null;
+    if (!attemptId) return null;
+
+    const key = `speaking_prep:${attemptId}:${qId}`;
+    let startedAt = 0;
+    try {
+      const raw = localStorage.getItem(key);
+      startedAt = raw ? Number(raw) : 0;
+    } catch {}
+    if (!Number.isFinite(startedAt) || startedAt <= 0) {
+      startedAt = Date.now();
+      try {
+        localStorage.setItem(key, String(startedAt));
+      } catch {}
+    }
+    return startedAt + speakingMeta.prepSeconds * 1000;
+  }, [attemptId, qId, qType, speakingDone, speakingMeta]);
+
+  useEffect(() => {
+    if (qType !== "speaking") return;
+    if (!isRecording && !prepEndAt) return;
+    const id = window.setInterval(() => {
+      const t = Date.now();
+      setNow(t);
+      if (!isRecording && prepEndAt && t >= prepEndAt) {
+        window.clearInterval(id);
+      }
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [isRecording, prepEndAt, qType]);
+
+  const prepRemaining =
+    prepEndAt && now < prepEndAt ? Math.max(0, Math.ceil((prepEndAt - now) / 1000)) : 0;
+
+  const speakingRemaining =
+    recordingEndsAt && now < recordingEndsAt ? Math.max(0, Math.ceil((recordingEndsAt - now) / 1000)) : null;
+
+  const speakingLockedByOtherRecording = qType === "speaking" && !isRecording && isAnyRecording;
+  const speakingLockedByAi = qType === "speaking" && isLiveInterview && aiSpeaking;
+
+  const prepStartedAnnounceKey =
+    attemptId && qType === "speaking" ? `speaking_prep_announce_start:${attemptId}:${qId}` : "";
+  const prepEndedAnnounceKey =
+    attemptId && qType === "speaking" ? `speaking_prep_announce_end:${attemptId}:${qId}` : "";
+
+  useEffect(() => {
+    if (!isLiveInterview) return;
+    if (qType !== "speaking") return;
+    if (!attemptId) return;
+    if (!speakingMeta?.prepSeconds || speakingMeta.prepSeconds <= 0) return;
+    if (!prepEndAt) return;
+    if (speakingDone) return;
+
+    const run = async () => {
+      try {
+        if (prepRemaining > 0) {
+          let already = false;
+          try {
+            already = localStorage.getItem(prepStartedAnnounceKey) === "1";
+          } catch {}
+          if (!already) {
+            const text = "You have one minute to prepare. Your preparation time starts now.";
+            const res = await fetch("/api/ai/speaking-interview-tts", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data?.audioUrl) {
+              const a = new Audio(String(data.audioUrl));
+              a.play().catch(() => {});
+            }
+            try {
+              localStorage.setItem(prepStartedAnnounceKey, "1");
+            } catch {}
+          }
+          return;
+        }
+
+        let alreadyEnd = false;
+        try {
+          alreadyEnd = localStorage.getItem(prepEndedAnnounceKey) === "1";
+        } catch {}
+        if (!alreadyEnd) {
+          const text = "Preparation time is over. Please start speaking now.";
+          const res = await fetch("/api/ai/speaking-interview-tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data?.audioUrl) {
+            const a = new Audio(String(data.audioUrl));
+            a.play().catch(() => {});
+          }
+          try {
+            localStorage.setItem(prepEndedAnnounceKey, "1");
+          } catch {}
+        }
+      } catch {}
+    };
+
+    void run();
+  }, [
+    attemptId,
+    isLiveInterview,
+    prepEndAt,
+    prepEndedAnnounceKey,
+    prepRemaining,
+    prepStartedAnnounceKey,
+    qId,
+    qType,
+    speakingDone,
+    speakingMeta?.prepSeconds,
+  ]);
 
   return (
     <div
@@ -1043,7 +1704,7 @@ function QuestionView({
               : "bg-[#faf9f6] border-[#d4cfc4] text-slate-600"
           }`}
         >
-          {question.questionNumber}
+          {displayNumber}
         </div>
 
         <div className="flex-1 space-y-3 min-w-0">
@@ -1055,7 +1716,7 @@ function QuestionView({
           {/* Question image */}
           {question.imageUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={question.imageUrl} alt={`Question ${question.questionNumber} illustration`} className="max-w-full rounded-lg border border-slate-200" />
+            <img src={question.imageUrl} alt={`Question ${displayNumber} illustration`} className="max-w-full rounded-lg border border-slate-200" />
           )}
 
           {/* ── Multiple Choice ──────────────────────────────────────── */}
@@ -1197,8 +1858,44 @@ function QuestionView({
               )}
 
               {speakingDone ? (
-                <div className="flex items-center gap-2 text-emerald-600 text-sm font-semibold bg-emerald-50 border border-emerald-200 px-4 py-3 rounded-xl">
-                  <CheckCircle size={16} /> Recording submitted successfully
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-600 text-sm font-semibold bg-emerald-50 border border-emerald-200 px-4 py-3 rounded-xl">
+                    <CheckCircle size={16} /> Recording submitted successfully
+                  </div>
+                  {isLiveInterview && liveTurn && (
+                    <div className="border border-[#d4cfc4] bg-white px-4 py-3 space-y-3">
+                      {liveTurn.userText && (
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">You</p>
+                          <p className="text-sm text-slate-700 leading-relaxed">{liveTurn.userText}</p>
+                        </div>
+                      )}
+                      {liveTurn.aiText && (
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Examiner</p>
+                          <p className="text-sm text-slate-800 leading-relaxed font-medium">{liveTurn.aiText}</p>
+                          {liveTurn.aiAudioUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const a = new Audio(liveTurn.aiAudioUrl as string);
+                                a.play().catch(() => {});
+                              }}
+                              className="mt-2 inline-flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50"
+                            >
+                              <Volume2 size={14} /> Play examiner
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : prepRemaining > 0 ? (
+                <div className="bg-amber-50 border border-amber-200 px-4 py-3 rounded-xl">
+                  <p className="text-xs font-extrabold text-amber-900 uppercase tracking-wider">Preparation time</p>
+                  <p className="mt-1 text-sm font-bold text-amber-900 tabular-nums">{prepRemaining}s</p>
+                  <p className="text-xs text-amber-800 mt-1">Recording will unlock when preparation ends.</p>
                 </div>
               ) : isRecording ? (
                 <div className="flex items-center gap-4 bg-red-50 border border-red-200 px-4 py-3 rounded-xl">
@@ -1210,18 +1907,24 @@ function QuestionView({
                   </button>
                   <div className="flex items-center gap-2 text-red-600 text-xs font-semibold">
                     <span className="w-2 h-2 rounded-full bg-red-500 animate-ping inline-block" />
-                    Recording in progress…
+                    Recording in progress{speakingRemaining != null ? ` · ${speakingRemaining}s left` : "…"}
                   </div>
                 </div>
               ) : (
                 <div>
                   <button
                     onClick={() => onStartRecording(qId)}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-[#0c1a2e] text-white rounded-xl text-sm font-bold hover:bg-[#050d16] transition-colors shadow-sm"
+                    disabled={speakingLockedByOtherRecording || speakingLockedByAi}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-[#0c1a2e] text-white rounded-xl text-sm font-bold hover:bg-[#050d16] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Mic size={15} /> Start Recording
                   </button>
-                  <p className="text-xs text-slate-400 mt-2">Ensure your microphone is enabled. Speak clearly when recording.</p>
+                  <p className="text-xs text-slate-400 mt-2">
+                    Ensure your microphone is enabled. Speak clearly when recording.
+                    {speakingMeta?.maxSeconds ? ` Max ${speakingMeta.maxSeconds}s.` : ""}
+                    {speakingLockedByOtherRecording ? " Another recording is in progress." : ""}
+                    {speakingLockedByAi ? " Please wait for the examiner." : ""}
+                  </p>
                 </div>
               )}
             </div>

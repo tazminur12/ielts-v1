@@ -3,8 +3,10 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
-import Subscription from "@/models/Subscription";
 import Attempt from "@/models/Attempt";
+import Answer from "@/models/Answer";
+import Test from "@/models/Test";
+import Question from "@/models/Question";
 
 export async function GET() {
   try {
@@ -15,98 +17,110 @@ export async function GET() {
 
     await dbConnect();
 
-    // Stats
-    const totalUsers = await User.countDocuments();
-    const activeUsers = await User.countDocuments({ role: "student" }); // Placeholder logic space
-    const totalTests = await Attempt.countDocuments();
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
 
-    // Calculate total revenue from active subscriptions (basic estimation)
-    const subscriptions = await Subscription.find({ status: "active" }).populate("planId");
-    let totalRevenue = 0;
-    
-    type PopulatedPlan = {
-      _id: string;
-      name: string;
-      price: { monthly: number; yearly: number };
-    };
+    const start7d = new Date(startOfToday);
+    start7d.setDate(start7d.getDate() - 7);
 
-    const productSales: { [key: string]: { name: string; sales: number; revenue: number } } = {};
+    const start30d = new Date(startOfToday);
+    start30d.setDate(start30d.getDate() - 30);
 
-    subscriptions.forEach((sub: any) => {
-      const plan = sub.planId as PopulatedPlan;
-      if (plan && plan.price) {
-        const amount = sub.billingCycle === "yearly" ? plan.price.yearly : plan.price.monthly;
-        totalRevenue += amount;
+    const totalUsers = await User.countDocuments({ role: "student" });
 
-        if (!productSales[plan._id]) {
-          productSales[plan._id] = { name: plan.name, sales: 0, revenue: 0 };
-        }
-        productSales[plan._id].sales += 1;
-        productSales[plan._id].revenue += amount;
-      }
+    const [attemptsWeek, attemptsMonth] = await Promise.all([
+      Attempt.countDocuments({ createdAt: { $gte: start7d } }),
+      Attempt.countDocuments({ createdAt: { $gte: start30d } }),
+    ]);
+
+    const evaluatedWeek = await Attempt.countDocuments({
+      createdAt: { $gte: start7d },
+      status: "evaluated",
+    });
+    const evaluatedMonth = await Attempt.countDocuments({
+      createdAt: { $gte: start30d },
+      status: "evaluated",
     });
 
-    const topProducts = Object.values(productSales).sort((a, b) => b.revenue - a.revenue);
+    const activeUsers7dAgg = await Attempt.aggregate([
+      { $match: { createdAt: { $gte: start7d }, userId: { $exists: true } } },
+      { $group: { _id: "$userId" } },
+      { $count: "count" },
+    ]);
+    const activeUsers7d = activeUsers7dAgg[0]?.count ?? 0;
 
-    // Recent Activity (Attempts)
-    const recentAttempts = await Attempt.find()
-      .populate("userId", "name")
-      .populate("testId", "title")
-      .sort({ createdAt: -1 })
-      .limit(5);
+    const avgBandPerTestAgg = await Attempt.aggregate([
+      { $match: { status: "evaluated", testId: { $exists: true }, $or: [{ overallBand: { $exists: true } }, { bandScore: { $exists: true } }] } },
+      { $group: { _id: "$testId", avgBand: { $avg: { $ifNull: ["$overallBand", "$bandScore"] } }, count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+    ]);
 
-    const recentActivity = recentAttempts.map((attempt: any) => ({
-      user: attempt.userId?.name || "Unknown User",
-      action: `Completed ${attempt.testId?.title || "Test"}`,
-      time: new Date(attempt.createdAt).toLocaleDateString(),
+    const testIds = avgBandPerTestAgg.map((r: any) => r._id);
+    const tests = await Test.find({ _id: { $in: testIds } }).select("title module examType").lean();
+    const testById = new Map<string, any>(tests.map((t: any) => [String(t._id), t]));
+
+    const averageBandPerTest = avgBandPerTestAgg.map((r: any) => ({
+      testId: String(r._id),
+      title: testById.get(String(r._id))?.title ?? "Unknown test",
+      module: testById.get(String(r._id))?.module ?? "",
+      examType: testById.get(String(r._id))?.examType ?? "",
+      avgBand: Math.round((Number(r.avgBand) || 0) * 2) / 2,
+      attempts: r.count,
     }));
 
-    // Grouping Usage By Module (Simulation using Attempt status or similar)
-    // we can use Attempt data directly or assume basic. For simplicity, we just return total users in different sections if we don't have modules typed.
-    
-    // For real mock usage by module:
-    const listeningUsage = await Attempt.countDocuments({ "answers.sectionId": { $exists: true } }); // just simulate
-    const usageByModule = [
-      { module: "Listening", count: Math.ceil(totalTests * 0.3) + listeningUsage, color: "bg-blue-500" },
-      { module: "Reading", count: Math.ceil(totalTests * 0.4), color: "bg-green-500" },
-      { module: "Writing", count: Math.ceil(totalTests * 0.2), color: "bg-purple-500" },
-      { module: "Speaking", count: Math.ceil(totalTests * 0.1), color: "bg-orange-500" },
-    ];
+    const mostAttemptedAgg = await Attempt.aggregate([
+      { $match: { testId: { $exists: true } } },
+      { $group: { _id: "$testId", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+    ]);
 
-    // Some mock data for charts because finding historical growth can be taxing for this phase
-    const revenueData = [
-      { month: "Jan", revenue: totalRevenue > 0 ? totalRevenue * 0.8 : 500 },
-      { month: "Feb", revenue: totalRevenue > 0 ? totalRevenue : 1200 },
-    ];
+    const mostAttemptedTests = mostAttemptedAgg.map((r: any) => ({
+      testId: String(r._id),
+      title: testById.get(String(r._id))?.title ?? "Unknown test",
+      count: r.count,
+    }));
 
-    const userGrowthData = [
-      { month: "Nov", users: Math.ceil(totalUsers * 0.6) },
-      { month: "Dec", users: Math.ceil(totalUsers * 0.8) },
-      { month: "Jan", users: Math.ceil(totalUsers * 0.9) },
-      { month: "Feb", users: totalUsers },
-    ];
+    const questionErrorAgg = await Answer.aggregate([
+      { $match: { isCorrect: false, questionId: { $exists: true } } },
+      { $group: { _id: "$questionId", wrong: { $sum: 1 } } },
+      { $sort: { wrong: -1 } },
+      { $limit: 15 },
+    ]);
+
+    const questionIds = questionErrorAgg.map((r: any) => r._id);
+    const questions = await Question.find({ _id: { $in: questionIds } })
+      .select("questionNumber questionText questionType")
+      .lean();
+    const qById = new Map<string, any>(questions.map((q: any) => [String(q._id), q]));
+
+    const questionErrors = questionErrorAgg.map((r: any) => ({
+      questionId: String(r._id),
+      questionNumber: qById.get(String(r._id))?.questionNumber,
+      questionType: qById.get(String(r._id))?.questionType,
+      questionText: qById.get(String(r._id))?.questionText,
+      wrong: r.wrong,
+    }));
 
     return NextResponse.json({
       success: true,
       data: {
-        stats: {
-          totalRevenue,
-          revenueChange: 12.5, // placeholder logic
+        totals: {
           totalUsers,
-          usersChange: 8.4,
-          activeUsers: activeUsers > 0 ? activeUsers : totalUsers,
-          activeChange: 5.2,
-          totalTests,
-          testsChange: 15.3,
+          attemptsWeek,
+          attemptsMonth,
         },
-        revenueData,
-        userGrowthData,
-        topProducts,
-        recentActivity: recentActivity.length ? recentActivity : [
-            { user: "System", action: "No recent activity found", time: "Now" }
-        ],
-        usageByModule,
-      }
+        engagement: {
+          activeUsers7d,
+          completionRate7d: attemptsWeek > 0 ? Math.round((evaluatedWeek / attemptsWeek) * 100) : 0,
+          completionRate30d: attemptsMonth > 0 ? Math.round((evaluatedMonth / attemptsMonth) * 100) : 0,
+        },
+        averageBandPerTest,
+        mostAttemptedTests,
+        questionErrors,
+      },
     });
 
   } catch (error: any) {

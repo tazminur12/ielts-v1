@@ -73,19 +73,32 @@ export async function POST(req: NextRequest) {
     );
 
     // Update attempt-level AI evaluation summary
-    await Attempt.findByIdAndUpdate(attemptId, {
-      $set: {
-        "aiEvaluation.grammarScore": evaluation.grammarScore,
-        "aiEvaluation.vocabularyScore": evaluation.vocabularyScore,
-        "aiEvaluation.coherenceScore": evaluation.coherenceScore,
-        "aiEvaluation.taskAchievementScore": evaluation.taskAchievementScore,
-        "aiEvaluation.feedback": evaluation.feedback,
-        "aiEvaluation.suggestions": evaluation.suggestions,
-        bandScore: evaluation.bandScore,
-        overallBand: evaluation.bandScore,
-        status: "evaluated",
-      },
-    });
+    if (String((attempt as any).module) === "writing") {
+      await Attempt.findByIdAndUpdate(attemptId, {
+        $set: {
+          "aiEvaluation.grammarScore": evaluation.grammarScore,
+          "aiEvaluation.vocabularyScore": evaluation.vocabularyScore,
+          "aiEvaluation.coherenceScore": evaluation.coherenceScore,
+          "aiEvaluation.taskAchievementScore": evaluation.taskAchievementScore,
+          "aiEvaluation.feedback": evaluation.feedback,
+          "aiEvaluation.suggestions": evaluation.suggestions,
+          bandScore: evaluation.bandScore,
+          overallBand: evaluation.bandScore,
+          status: "evaluated",
+        },
+      });
+    } else {
+      await Attempt.findByIdAndUpdate(attemptId, {
+        $set: {
+          "aiEvaluation.grammarScore": evaluation.grammarScore,
+          "aiEvaluation.vocabularyScore": evaluation.vocabularyScore,
+          "aiEvaluation.coherenceScore": evaluation.coherenceScore,
+          "aiEvaluation.taskAchievementScore": evaluation.taskAchievementScore,
+          "aiEvaluation.feedback": evaluation.feedback,
+          "aiEvaluation.suggestions": evaluation.suggestions,
+        },
+      });
+    }
 
     return withCacheHeaders(
       NextResponse.json({

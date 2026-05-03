@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
         testId: formData.get("testId"),
         title: formData.get("title"),
         order: Number(formData.get("order")),
+        partNumber: formData.get("partNumber") ? Number(formData.get("partNumber")) : undefined,
         sectionType: formData.get("sectionType"),
         instructions: formData.get("instructions"),
         passageText: formData.get("passageText"),

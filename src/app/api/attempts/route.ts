@@ -6,7 +6,12 @@ import { effectiveTestDurationMinutes } from "@/lib/testDuration";
 import Attempt from "@/models/Attempt";
 import Test from "@/models/Test";
 import Plan from "@/models/Plan";
+import Subscription from "@/models/Subscription";
 import { ensureGuestId } from "@/lib/guestSession";
+import { randomUUID } from "crypto";
+import { computeExpiresAt, computeRemainingSeconds } from "@/lib/attemptTiming";
+import { getAttemptSessionId, checkAttemptSession } from "@/lib/attemptSession";
+import { submitAttemptDoc } from "@/lib/attemptSubmission";
 
 // GET /api/attempts  — user's own attempts history
 export async function GET(req: NextRequest) {
@@ -62,17 +67,43 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "Test not found" }, { status: 404 });
     }
 
-    // Allow guests to start attempts only for the lowest (free) plan tests.
     let actor: { kind: "user"; id: string } | { kind: "guest"; id: string } | null = null;
     if (session?.user?.id) {
+      const activePlans = await Plan.find({ isActive: true })
+        .select("slug tierRank displayOrder")
+        .lean();
+
+      const subscription = (await Subscription.findOne({
+        userId: session.user.id,
+        status: { $in: ["active", "trial"] },
+        endDate: { $gte: new Date() },
+      })
+        .populate({ path: "planId", select: "slug tierRank displayOrder" })
+        .lean()) as any;
+
+      const safeTierRank = (p: { tierRank?: number; displayOrder?: number } | null | undefined): number => {
+        const tr = Number((p as any)?.tierRank);
+        if (Number.isFinite(tr) && tr >= 1) return tr;
+        const d = Number((p as any)?.displayOrder);
+        if (Number.isFinite(d) && d >= 1) return d;
+        return 1;
+      };
+
+      let accessibleSlugs: string[] = [];
+      if (subscription?.planId) {
+        const userTierRank = safeTierRank(subscription.planId);
+        accessibleSlugs = (activePlans as any[])
+          .filter((p) => safeTierRank(p) <= userTierRank)
+          .map((p) => String(p.slug));
+      }
+      if (!accessibleSlugs.includes("free")) accessibleSlugs = ["free", ...accessibleSlugs];
+      if (!accessibleSlugs.includes(String(test.accessLevel))) {
+        return NextResponse.json({ message: "Upgrade required" }, { status: 403 });
+      }
+
       actor = { kind: "user", id: session.user.id };
     } else {
-      const freePlan = await Plan.findOne({ isActive: true })
-        .sort({ displayOrder: 1 })
-        .select("slug")
-        .lean() as { slug: string } | null;
-      const freeSlug = freePlan?.slug ?? "free";
-      if (String(test.accessLevel) !== String(freeSlug)) {
+      if (String(test.accessLevel) !== "free") {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
       }
       const res = NextResponse.json({}, { status: 200 });
@@ -90,20 +121,60 @@ export async function POST(req: NextRequest) {
       const mins = effectiveTestDurationMinutes(test);
       if (mins > 0) {
         const totalSecs = mins * 60;
-        const startMs = existing.startedAt
-          ? new Date(existing.startedAt).getTime()
-          : Date.now();
-        const elapsed = Math.floor((Date.now() - startMs) / 1000);
-        if (elapsed < totalSecs) {
-          return NextResponse.json({ attempt: existing, resumed: true });
-        }
-        await Attempt.findByIdAndUpdate(existing._id, {
-          status: "submitted",
-          submittedAt: new Date(),
-          timeSpent: Math.min(elapsed, totalSecs),
+        const remaining = computeRemainingSeconds({
+          startedAt: new Date(existing.startedAt),
+          durationSeconds: totalSecs,
+          now: new Date(),
         });
+
+        const incomingSessionId = getAttemptSessionId(req) ?? randomUUID();
+        const sessionCheck = checkAttemptSession({
+          attempt: existing,
+          incomingSessionId,
+          now: new Date(),
+        });
+
+        if (remaining > 0) {
+          if (!sessionCheck.ok) {
+            return NextResponse.json(
+              { message: sessionCheck.reason === "missing_session" ? "Missing session" : "Attempt is active in another session" },
+              { status: 409 }
+            );
+          }
+
+          if (sessionCheck.takeover) {
+            existing.activeSessionId = incomingSessionId!;
+          }
+          existing.lastSeenAt = new Date();
+          existing.durationSeconds = totalSecs;
+          existing.expiresAt = computeExpiresAt({ startedAt: new Date(existing.startedAt), durationSeconds: totalSecs });
+          await existing.save();
+
+          return NextResponse.json({ attempt: existing, resumed: true, sessionId: existing.activeSessionId });
+        }
+
+        const actorFilter =
+          actor.kind === "user" ? ({ userId: actor.id } as const) : ({ guestId: actor.id } as const);
+        await submitAttemptDoc({ attempt: existing, actor: actorFilter, now: new Date() });
       } else {
-        return NextResponse.json({ attempt: existing, resumed: true });
+        const incomingSessionId = getAttemptSessionId(req) ?? randomUUID();
+        const sessionCheck = checkAttemptSession({
+          attempt: existing,
+          incomingSessionId,
+          now: new Date(),
+        });
+        if (!sessionCheck.ok) {
+          return NextResponse.json(
+            { message: sessionCheck.reason === "missing_session" ? "Missing session" : "Attempt is active in another session" },
+            { status: 409 }
+          );
+        }
+        if (sessionCheck.takeover) {
+          existing.activeSessionId = incomingSessionId!;
+        }
+        existing.lastSeenAt = new Date();
+        await existing.save();
+        return NextResponse.json({ attempt: existing, resumed: true, sessionId: existing.activeSessionId });
       }
     }
 
@@ -120,13 +191,24 @@ export async function POST(req: NextRequest) {
       module: test.module,
       totalMarks: test.totalQuestions,
       ipAddress,
+      durationSeconds: effectiveTestDurationMinutes(test) > 0 ? effectiveTestDurationMinutes(test) * 60 : undefined,
     };
     if (actor.kind === "user") attemptDoc.userId = actor.id;
     else attemptDoc.guestId = actor.id;
 
+    const sessionId = randomUUID();
+    attemptDoc.activeSessionId = sessionId;
+    attemptDoc.lastSeenAt = new Date();
+    if (typeof attemptDoc.durationSeconds === "number" && attemptDoc.durationSeconds > 0) {
+      attemptDoc.expiresAt = computeExpiresAt({
+        startedAt: attemptDoc.startedAt as Date,
+        durationSeconds: attemptDoc.durationSeconds as number,
+      });
+    }
+
     const attempt = await Attempt.create(attemptDoc);
 
-    const res = NextResponse.json({ attempt, resumed: false }, { status: 201 });
+    const res = NextResponse.json({ attempt, resumed: false, sessionId }, { status: 201 });
     if (!session) {
       // Make sure guest cookie exists on response if caller is a guest.
       ensureGuestId(req, res);

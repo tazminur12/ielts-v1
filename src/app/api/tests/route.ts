@@ -88,13 +88,11 @@ export async function GET(req: NextRequest) {
         await redisSetJson(entKey, accessibleSlugs, 120);
       }
 
-      // If no accessible slugs (no subscription), fall back to lowest tier plan
+      // If no accessible slugs (no subscription), fall back to free slug
       if (accessibleSlugs.length === 0) {
-        const freeCandidate =
-          activePlans
-            .map((p) => ({ slug: p.slug, rank: safeTierRank(p) }))
-            .sort((a, b) => a.rank - b.rank)[0]?.slug ?? "free";
-        accessibleSlugs = [freeCandidate];
+        accessibleSlugs = ["free"];
+      } else if (!accessibleSlugs.includes("free")) {
+        accessibleSlugs = ["free", ...accessibleSlugs];
       }
 
       if (!plansBySlug) {
@@ -155,11 +153,8 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Guest: fall back to lowest tier plan (free)
-    const freeCandidate =
-      activePlans
-        .map((p) => ({ slug: p.slug, rank: safeTierRank(p) }))
-        .sort((a, b) => a.rank - b.rank)[0]?.slug ?? "free";
+    // Guest: allow only free slug
+    const freeCandidate = "free";
 
     if (!plansBySlug) {
       const plans = (await Plan.find({ isActive: true })
