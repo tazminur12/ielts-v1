@@ -67,7 +67,7 @@ export default function GenerateMockTestPage() {
 
       const topicForApi = form.defaultTheme || "General";
 
-      const response = await fetch("/api/admin/tests/generate", {
+      const response = await fetch("/api/admin/tests/generate/mock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

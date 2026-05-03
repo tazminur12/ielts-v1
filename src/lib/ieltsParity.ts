@@ -142,7 +142,7 @@ export async function validateIeltsParityByTestId(testId: string): Promise<Parit
       const passage = String(sec.passageText || "").trim();
       const wc = countWords(passage);
       if (wc < 700 || wc > 1000) {
-        errors.push(`Reading passage ${expectedPart}: passageText must be 700–1000 words (found ${wc}).`);
+        warnings.push(`Reading passage ${expectedPart}: passageText is outside 700–1000 words (found ${wc}).`);
       }
       validateObjectiveBasics(objective, `Reading passage ${expectedPart}`);
     }

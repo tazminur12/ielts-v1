@@ -74,7 +74,7 @@ export default function GenerateAITestPage() {
           ? 2
           : 3;
 
-      const response = await fetch("/api/admin/tests/generate", {
+      const response = await fetch("/api/admin/tests/generate/practice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
