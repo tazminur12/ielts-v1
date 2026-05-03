@@ -1,19 +1,69 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useCallback, useState, useRef, useEffect } from "react";
 import { Play, Pause, Volume2, VolumeX } from "lucide-react";
 
-export const AudioPlayer = ({ src }: { src: string }) => {
+type Props = {
+  src: string;
+  lockKey?: string;
+  singlePlay?: boolean;
+};
+
+type LockState = {
+  startedAt?: number;
+  endedAt?: number;
+  lastTime?: number;
+};
+
+export const AudioPlayer = ({ src, lockKey, singlePlay }: Props) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const lastTimeRef = useRef(0);
+  const storageKey = lockKey ? `audio_lock:${lockKey}` : null;
+  const [locked, setLocked] = useState(() => {
+    if (!singlePlay || !storageKey) return false;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const s = raw ? (JSON.parse(raw) as LockState) : {};
+      return typeof s.endedAt === "number";
+    } catch {
+      return false;
+    }
+  });
+
+  const readLock = useCallback((): LockState => {
+    if (!storageKey) return {};
+    try {
+      const raw = localStorage.getItem(storageKey);
+      return raw ? (JSON.parse(raw) as LockState) : {};
+    } catch {
+      return {};
+    }
+  }, [storageKey]);
+
+  const writeLock = useCallback((patch: Partial<LockState>) => {
+    if (!storageKey) return;
+    const prev = readLock();
+    const next = { ...prev, ...patch };
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(next));
+    } catch {}
+  }, [readLock, storageKey]);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+
+    if (singlePlay && storageKey) {
+      const s = readLock();
+      if (typeof s.lastTime === "number" && s.lastTime > 0 && Number.isFinite(s.lastTime)) {
+        audio.currentTime = Math.max(0, s.lastTime);
+      }
+    }
 
     const setAudioData = () => {
       setDuration(audio.duration);
@@ -21,26 +71,49 @@ export const AudioPlayer = ({ src }: { src: string }) => {
     }
 
     const setAudioTime = () => {
+      if (singlePlay) {
+        if (audio.currentTime + 0.2 < lastTimeRef.current) {
+          audio.currentTime = lastTimeRef.current;
+          return;
+        }
+        lastTimeRef.current = audio.currentTime;
+        writeLock({ lastTime: audio.currentTime });
+      }
       setCurrentTime(audio.currentTime);
     }
 
     // Events
     audio.addEventListener("loadeddata", setAudioData);
     audio.addEventListener("timeupdate", setAudioTime);
-    audio.addEventListener("ended", () => setIsPlaying(false));
+    const onEnded = () => {
+      setIsPlaying(false);
+      if (singlePlay) {
+        setLocked(true);
+        writeLock({ endedAt: Date.now(), lastTime: audio.duration });
+      }
+    };
+    audio.addEventListener("ended", onEnded);
 
     return () => {
       audio.removeEventListener("loadeddata", setAudioData);
       audio.removeEventListener("timeupdate", setAudioTime);
-      audio.removeEventListener("ended", () => setIsPlaying(false));
+      audio.removeEventListener("ended", onEnded);
     }
-  }, []);
+  }, [readLock, singlePlay, storageKey, writeLock]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
+    if (singlePlay && locked) return;
+
     if (isPlaying) {
       audioRef.current.pause();
     } else {
+      if (singlePlay && storageKey) {
+        const s = readLock();
+        if (typeof s.startedAt !== "number") {
+          writeLock({ startedAt: Date.now() });
+        }
+      }
       audioRef.current.play();
     }
     setIsPlaying(!isPlaying);
@@ -63,12 +136,19 @@ export const AudioPlayer = ({ src }: { src: string }) => {
 
   return (
     <div className="bg-[#1e293b] text-white p-3 rounded-lg shadow-lg flex items-center gap-4 w-full max-w-2xl mx-auto mb-6">
-      <audio ref={audioRef} src={src} />
+      <audio
+        ref={audioRef}
+        src={src}
+        controls={false}
+        preload="auto"
+        controlsList="nodownload noplaybackrate noremoteplayback"
+      />
       
       <button 
         onClick={togglePlay}
-        className="bg-blue-600 hover:bg-blue-500 rounded-full p-2 transition-colors flex-shrink-0"
-        aria-label={isPlaying ? "Pause audio" : "Play audio"}
+        disabled={singlePlay && locked}
+        className="bg-blue-600 hover:bg-blue-500 rounded-full p-2 transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+        aria-label={singlePlay && locked ? "Audio locked" : isPlaying ? "Pause audio" : "Play audio"}
       >
         {isPlaying ? <Pause size={20} /> : <Play size={20} />}
       </button>
@@ -84,6 +164,11 @@ export const AudioPlayer = ({ src }: { src: string }) => {
                 style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
              />
          </div>
+         {singlePlay && (
+           <div className="mt-2 text-[11px] text-slate-300 font-semibold">
+             {locked ? "Audio has finished. Replaying is disabled." : "Single play mode enabled."}
+           </div>
+         )}
       </div>
 
       <div className="flex items-center gap-2 w-24 flex-shrink-0">

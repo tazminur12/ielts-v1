@@ -115,12 +115,40 @@ export default function AdminPracticeTestsPage() {
     });
     if (!confirm.isConfirmed) return;
 
-    await fetch(`/api/admin/tests/${test._id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    fetchTests(pagination.page);
+    try {
+      const res = await fetch(`/api/admin/tests/${test._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const list = Array.isArray(data?.errors) ? data.errors : [];
+        if (list.length > 0) {
+          await Swal.fire({
+            title: "Cannot Publish",
+            html: `<div style="text-align:left">
+              <p style="margin:0 0 8px 0">${data?.message || "IELTS parity validation failed"}:</p>
+              <ul style="padding-left:18px;margin:0">${list.map((e: string) => `<li>${e}</li>`).join("")}</ul>
+            </div>`,
+            icon: "error",
+            confirmButtonColor: "#dc2626",
+          });
+        } else {
+          await Swal.fire("Error", data?.message || "Failed to update status.", "error");
+        }
+        return;
+      }
+
+      await Swal.fire(
+        "Success",
+        newStatus === "published" ? "Test published" : "Moved to draft",
+        "success"
+      );
+      fetchTests(pagination.page);
+    } catch (e: any) {
+      Swal.fire("Error", e?.message || "Failed to update status.", "error");
+    }
   };
 
   const handleDelete = async (test: Test) => {

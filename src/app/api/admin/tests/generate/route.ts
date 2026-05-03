@@ -10,6 +10,7 @@ import Question from "@/models/Question";
 import type { IQuestion } from "@/models/Question";
 import OpenAI from "openai";
 import type { Types } from "mongoose";
+import { z } from "zod";
 import {
   buildListeningTranscriptFromPayload,
   synthesizeListeningAudioToS3,
@@ -33,6 +34,7 @@ type SectionSchemaType =
 interface AISectionPayload {
   sectionTitle?: string;
   sectionType?: string;
+  partNumber?: number;
   instruction?: string;
   instructions?: string;
   passage?: string;
@@ -91,15 +93,19 @@ async function persistGroupsForSection(
   groups: Array<{
     title?: string;
     instruction?: string;
+    passage?: string;
     questions?: Array<{
       type?: string;
       text?: string;
       options?: unknown[];
       correctAnswer?: string;
       marks?: number;
+      speakingPrompt?: string;
+      speakingDuration?: number;
     }>;
   }>,
-  startQuestionNumber: number
+  startQuestionNumber: number,
+  skill?: IQuestion["skill"]
 ): Promise<number> {
   let totalQuestions = 0;
   let qCursor = startQuestionNumber;
@@ -116,7 +122,9 @@ async function persistGroupsForSection(
         groupData.title != null && groupData.title !== ""
           ? sanitizeIeltsCandidateText(String(groupData.title))
           : groupData.title,
-      instructions: sanitizeIeltsCandidateText(groupData.instruction || ""),
+      instructions: sanitizeIeltsCandidateText(
+        [groupData.instruction || "", groupData.passage || ""].filter(Boolean).join("\n\n")
+      ),
       order: i + 1,
       questionType: normalizeQuestionType(qs[0]?.type) as IQuestionGroup["questionType"],
       questionNumberStart: qCursor,
@@ -138,8 +146,17 @@ async function persistGroupsForSection(
         questionNumber: qCursor,
         options: formattedOptions,
         correctAnswer: qData.correctAnswer || "",
+        speakingPrompt:
+          normalizeQuestionType(qData.type) === "speaking" && qData.speakingPrompt
+            ? sanitizeIeltsCandidateText(String(qData.speakingPrompt))
+            : undefined,
+        speakingDuration:
+          normalizeQuestionType(qData.type) === "speaking" && typeof qData.speakingDuration === "number"
+            ? qData.speakingDuration
+            : undefined,
         marks: qData.marks || 1,
         order: j + 1,
+        ...(skill ? { skill } : {}),
       });
       qCursor += 1;
       totalQuestions += 1;
@@ -237,23 +254,23 @@ Return ONLY valid JSON in exactly this shape:
       "title": "Part 1: Introduction and Interview",
       "instruction": "Answer the following questions about yourself.",
       "questions": [
-        { "type": "short_answer", "text": "Question 1?", "marks": 1 },
-        { "type": "short_answer", "text": "Question 2?", "marks": 1 }
+        { "type": "speaking", "text": "Question 1?", "speakingDuration": 30, "marks": 1 },
+        { "type": "speaking", "text": "Question 2?", "speakingDuration": 30, "marks": 1 }
       ]
     },
     {
       "title": "Part 2: Long Turn (Cue Card)",
       "instruction": "Describe a time when you... You should say: where it was, when it was, who you were with, and explain why you remember it so well.",
       "questions": [
-        { "type": "essay", "text": "Talk about the topic on your cue card.", "marks": 1 }
+        { "type": "speaking", "text": "Talk about the topic on your cue card.", "speakingPrompt": "Describe ... You should say: ...", "speakingDuration": 120, "marks": 1 }
       ]
     },
     {
       "title": "Part 3: Discussion",
       "instruction": "Let's discuss this topic further.",
       "questions": [
-        { "type": "short_answer", "text": "Question 1?", "marks": 1 },
-        { "type": "short_answer", "text": "Question 2?", "marks": 1 }
+        { "type": "speaking", "text": "Question 1?", "speakingDuration": 60, "marks": 1 },
+        { "type": "speaking", "text": "Question 2?", "speakingDuration": 60, "marks": 1 }
       ]
     }
   ]
@@ -309,6 +326,211 @@ Return ONLY valid JSON (no markdown) in exactly this shape:
 }`;
 }
 
+function buildOfficialListeningModulePrompt(topic: string, difficulty: string, ieltsType: string, titleBase?: string) {
+  const m = mockPreamble("practice", ieltsType);
+  const base = (titleBase || "").trim() || "Listening Section";
+  return `Produce a complete ${ieltsType} IELTS Listening module that strictly follows the official international structure.
+${m}
+Topic/theme focus: ${topic || "General"}
+Difficulty: ${difficulty || "medium"}
+
+STRICT REQUIREMENTS (must follow exactly):
+- 4 listening sections (partNumber 1..4)
+- 10 questions per section (total 40)
+- Each section must include a full transcript in "passage"
+- Use "${base}" as the base sectionTitle and append the partNumber (e.g. "${base} 1", "${base} 2").
+- Use authentic IELTS rubrics ("Write ONE WORD AND/OR A NUMBER.", "Choose the correct letter A, B, C or D.", etc.)
+- Objective questions must include correctAnswer
+- multiple_choice must have exactly 4 options and correctAnswer must be A/B/C/D
+
+Return ONLY valid JSON (no markdown) in exactly this shape:
+{
+  "schemaVersion": "ielts_module_v1",
+  "sections": [
+    {
+      "sectionTitle": "${base} 1",
+      "sectionType": "listening_part",
+      "partNumber": 1,
+      "instruction": "You will hear a conversation between two people. Answer the questions.",
+      "passage": "Full transcript for Section 1.",
+      "groups": [
+        {
+          "title": "Questions 1-10",
+          "instruction": "Choose the correct letter A, B, C or D.",
+          "questions": [
+            { "type": "multiple_choice", "text": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "correctAnswer": "A", "marks": 1 }
+          ]
+        }
+      ]
+    }
+  ]
+}`;
+}
+
+function buildOfficialReadingModulePrompt(topic: string, difficulty: string, ieltsType: string, titleBase?: string) {
+  const m = mockPreamble("practice", ieltsType);
+  const base = (titleBase || "").trim() || "Reading Passage";
+  return `Produce a complete ${ieltsType} IELTS Reading module that strictly follows the official international structure.
+${m}
+Topic/theme focus: ${topic || "General"}
+Difficulty: ${difficulty || "medium"}
+
+STRICT REQUIREMENTS (must follow exactly):
+- 3 passages (partNumber 1..3)
+- Total questions = 40 with distribution: Passage 1 = 13, Passage 2 = 13, Passage 3 = 14
+- Each passage must be 700–1000 words in "passage"
+- Use "${base}" as the base sectionTitle and append the partNumber (e.g. "${base} 1", "${base} 2", "${base} 3").
+- Use authentic IELTS rubrics and realistic topics (not a generic essay about the topic)
+- Objective questions must include correctAnswer
+- multiple_choice must have exactly 4 options and correctAnswer must be A/B/C/D
+
+Return ONLY valid JSON (no markdown) in exactly this shape:
+{
+  "schemaVersion": "ielts_module_v1",
+  "sections": [
+    {
+      "sectionTitle": "${base} 1",
+      "sectionType": "reading_passage",
+      "partNumber": 1,
+      "instruction": "Read the passage and answer the questions.",
+      "passage": "700–1000 word passage.",
+      "groups": [
+        {
+          "title": "Questions 1-13",
+          "instruction": "Do the following statements agree with the information in the passage?",
+          "questions": [
+            { "type": "true_false_not_given", "text": "...", "correctAnswer": "TRUE", "marks": 1 }
+          ]
+        }
+      ]
+    }
+  ]
+}`;
+}
+
+function buildOfficialWritingModulePrompt(topic: string, difficulty: string, ieltsType: string, titleBase?: string) {
+  const m = mockPreamble("practice", ieltsType);
+  const base = (titleBase || "").trim() || "Writing Task";
+  return `Produce a complete ${ieltsType} IELTS Writing module that strictly follows the official international structure.
+${m}
+Topic/theme focus: ${topic || "General"}
+Difficulty: ${difficulty || "medium"}
+
+STRICT REQUIREMENTS (must follow exactly):
+- Task 1 and Task 2 must be separate sections (partNumber 1 and 2), each containing exactly one essay question.
+- Task 1 instruction must include "You should spend about 20 minutes on this task."
+- Task 2 instruction must include "You should spend about 40 minutes on this task."
+- Use "${base}" as the base sectionTitle and append the partNumber (e.g. "${base} 1", "${base} 2").
+- Do not include answers, band scores, or AI mentions in student-facing text.
+
+Return ONLY valid JSON (no markdown) in exactly this shape:
+{
+  "schemaVersion": "ielts_module_v1",
+  "sections": [
+    {
+      "sectionTitle": "${base} 1",
+      "sectionType": "writing_task",
+      "partNumber": 1,
+      "instruction": "You should spend about 20 minutes on this task.",
+      "passage": "",
+      "groups": [
+        {
+          "title": "Task 1",
+          "instruction": "You should spend about 20 minutes on this task.",
+          "passage": "Academic: describe the visual (chart/table/process/diagram) in words. General: include the situation and bullet points for the letter.",
+          "questions": [ { "type": "essay", "text": "...", "marks": 1 } ]
+        }
+      ]
+    },
+    {
+      "sectionTitle": "${base} 2",
+      "sectionType": "writing_task",
+      "partNumber": 2,
+      "instruction": "You should spend about 40 minutes on this task.",
+      "passage": "",
+      "groups": [
+        {
+          "title": "Task 2",
+          "instruction": "You should spend about 40 minutes on this task.",
+          "passage": "",
+          "questions": [ { "type": "essay", "text": "...", "marks": 1 } ]
+        }
+      ]
+    }
+  ]
+}`;
+}
+
+function buildOfficialSpeakingModulePrompt(topic: string, ieltsType: string, titleBase?: string) {
+  const m = mockPreamble("practice", ieltsType);
+  const base = (titleBase || "").trim() || "Speaking Part";
+  return `Produce a complete ${ieltsType} IELTS Speaking module that strictly follows the official international structure.
+${m}
+Topic/theme focus: ${topic || "General"}
+
+STRICT REQUIREMENTS (must follow exactly):
+- Parts 1, 2, 3 must be separate sections (partNumber 1..3)
+- Use "${base}" as the base sectionTitle and append the partNumber (e.g. "${base} 1", "${base} 2", "${base} 3").
+- All questions must use type "speaking"
+- Part 2 must include exactly one cue card question with "speakingPrompt" and speakingDuration = 120
+- Part 1 questions speakingDuration ~30; Part 3 ~60
+
+Return ONLY valid JSON (no markdown) in exactly this shape:
+{
+  "schemaVersion": "ielts_module_v1",
+  "sections": [
+    {
+      "sectionTitle": "${base} 1",
+      "sectionType": "speaking_part",
+      "partNumber": 1,
+      "instruction": "Answer the following questions about yourself.",
+      "passage": "",
+      "groups": [
+        {
+          "title": "Part 1: Introduction and Interview",
+          "instruction": "Answer the following questions about yourself.",
+          "questions": [
+            { "type": "speaking", "text": "Question 1?", "speakingDuration": 30, "marks": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "sectionTitle": "${base} 2",
+      "sectionType": "speaking_part",
+      "partNumber": 2,
+      "instruction": "You will have 1 minute to prepare and you should speak for 1 to 2 minutes.",
+      "passage": "",
+      "groups": [
+        {
+          "title": "Part 2: Long Turn (Cue Card)",
+          "instruction": "Here is your cue card.",
+          "questions": [
+            { "type": "speaking", "text": "Talk about the topic on your cue card.", "speakingPrompt": "Describe ... You should say: ...", "speakingDuration": 120, "marks": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "sectionTitle": "${base} 3",
+      "sectionType": "speaking_part",
+      "partNumber": 3,
+      "instruction": "Let's discuss this topic further.",
+      "passage": "",
+      "groups": [
+        {
+          "title": "Part 3: Discussion",
+          "instruction": "Let's discuss this topic further.",
+          "questions": [
+            { "type": "speaking", "text": "Question 1?", "speakingDuration": 60, "marks": 1 }
+          ]
+        }
+      ]
+    }
+  ]
+}`;
+}
+
 type FullMockSectionHints = {
   listeningTopic?: string;
   listeningTitle?: string;
@@ -329,7 +551,7 @@ function fullMockSectionLine(
   const t = (topicHint || "").trim() || fallback;
   const ti = (titleHint || "").trim();
   const titlePart = ti
-    ? ` Use this exact sectionTitle for the ${label} section in the JSON: "${ti}".`
+    ? ` Use "${ti}" as the base sectionTitle for ${label}. If there are multiple parts/passages/tasks, append the partNumber (e.g. "${ti} 1", "${ti} 2").`
     : "";
   return `${label}: all content in this section must follow the theme "${t}".${titlePart}`;
 }
@@ -337,12 +559,10 @@ function fullMockSectionLine(
 function buildFullMockPrompt(
   topic: string,
   difficulty: string,
-  questionCount: number,
+  _questionCount: number,
   ieltsType: string,
   hints: FullMockSectionHints = {}
 ) {
-  const target = Math.max(24, Math.min(48, questionCount || 32));
-  const per = Math.max(6, Math.floor(target / 4));
   const m = mockPreamble("mock", ieltsType);
   const fb = topic || "Contemporary issues";
 
@@ -382,61 +602,292 @@ Section-specific requirements (follow each strictly):
 - ${speakingL}
 
 Difficulty: ${difficulty || "medium"}
-Approximate scale: about ${target} scored items (listening + reading; writing = 2 tasks; speaking = multiple prompts across parts).
+
+STRICT IELTS PARITY REQUIREMENTS (must follow exactly):
+- Listening must have EXACTLY 4 sections (partNumber 1..4). Each listening section must have EXACTLY 10 scored questions. Total listening questions = 40.
+- Reading must have EXACTLY 3 passages (partNumber 1..3). Total reading questions = 40 with distribution: Passage 1 = 13, Passage 2 = 13, Passage 3 = 14.
+- Reading passageText must be 700–1000 words each (count words; not characters).
+- Writing must have EXACTLY 2 tasks: Task 1 and Task 2 (each in its own writing_task section with partNumber 1 and 2). Task 1 instruction must say "You should spend about 20 minutes...". Task 2 instruction must say "You should spend about 40 minutes...". Each task must include ONE essay question.
+- Speaking must have Parts 1, 2, 3 (three speaking_part sections with partNumber 1, 2, 3). Use question type "speaking" (not short_answer/essay) so the platform records audio.
+  - Part 1: 6–8 short examiner questions (speakingDuration ~30s).
+  - Part 2: ONE cue-card speaking question. Put the cue card text in "speakingPrompt" field. Set speakingDuration = 120. Preparation time is handled by the platform; do not mention AI.
+  - Part 3: 4–6 discussion questions (speakingDuration ~60s).
+
+Question type rules:
+- Allowed question types: multiple_choice, true_false_not_given, fill_blank, matching, matching_headings, summary_completion, short_answer, essay, speaking.
+- For every objective question (all types except essay and speaking): include "correctAnswer". Use official IELTS-style rubrics like "Write ONE WORD AND/OR A NUMBER.".
+- multiple_choice must have exactly 4 options and correctAnswer must be one of "A","B","C","D".
+- For fill_blank/short_answer/sentence-like items: correctAnswer must be a single string (no explanations needed).
 
 Every section's titles, instructions, passages, and questions must read as professional test content. Do not use headings like "Mock Test" or "Sample" in student-facing strings; use neutral labels unless a section title was given above.
 
 Return ONLY valid JSON (no markdown) in this shape:
 {
+  "schemaVersion": "ielts_full_v1",
   "sections": [
     {
-      "sectionTitle": "Listening",
+      "sectionTitle": "Listening Section 1",
       "sectionType": "listening_part",
+      "partNumber": 1,
       "instruction": "You will hear a number of recordings. Answer the questions.",
-      "passage": "Full transcript text that questions refer to.",
+      "passage": "Full transcript text that questions refer to (for Section 1 only).",
       "groups": [
         {
-          "title": "Questions 1-${per}",
-          "instruction": "Choose the correct letter A, B, or C.",
+          "title": "Questions 1-10",
+          "instruction": "Choose the correct letter A, B, C or D.",
           "questions": [
-            { "type": "multiple_choice", "text": "...", "options": ["A ...", "B ...", "C ..."], "correctAnswer": "A", "marks": 1 }
+            { "type": "multiple_choice", "text": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "correctAnswer": "A", "marks": 1 }
           ]
         }
       ]
     },
     {
-      "sectionTitle": "Reading",
+      "sectionTitle": "Reading Passage 1",
       "sectionType": "reading_passage",
+      "partNumber": 1,
       "instruction": "Read the passage and answer the questions.",
-      "passage": "One long academic-style passage.",
-      "groups": [ ... multiple_choice and true_false_not_given ... ]
-    },
-    {
-      "sectionTitle": "Writing",
-      "sectionType": "writing_task",
-      "instruction": "Follow the tasks below.",
-      "passage": "",
+      "passage": "A 700–1000 word passage.",
       "groups": [
-        { "title": "Task 1", "instruction": "20 minutes", "questions": [ { "type": "essay", "text": "...", "marks": 1 } ] },
-        { "title": "Task 2", "instruction": "40 minutes", "questions": [ { "type": "essay", "text": "...", "marks": 1 } ] }
+        {
+          "title": "Questions 1-13",
+          "instruction": "Do the following statements agree with the information in the passage?",
+          "questions": [
+            { "type": "true_false_not_given", "text": "...", "correctAnswer": "TRUE", "marks": 1 }
+          ]
+        }
       ]
     },
     {
-      "sectionTitle": "Speaking",
-      "sectionType": "speaking_part",
-      "instruction": "Answer each part naturally.",
+      "sectionTitle": "Writing Task 1",
+      "sectionType": "writing_task",
+      "partNumber": 1,
+      "instruction": "You should spend about 20 minutes on this task.",
       "passage": "",
       "groups": [
-        { "title": "Part 1", "instruction": "Interview", "questions": [ { "type": "short_answer", "text": "...", "marks": 1 } ] },
-        { "title": "Part 2", "instruction": "Cue card", "questions": [ { "type": "essay", "text": "Describe ...", "marks": 1 } ] },
-        { "title": "Part 3", "instruction": "Discussion", "questions": [ { "type": "short_answer", "text": "...", "marks": 1 } ] }
+        {
+          "title": "Task 1",
+          "instruction": "You should spend about 20 minutes on this task.",
+          "passage": "Academic: describe the visual (chart/table/process/diagram) in words. General: include the situation and bullet points for the letter.",
+          "questions": [ { "type": "essay", "text": "...", "marks": 1 } ]
+        }
+      ]
+    },
+    {
+      "sectionTitle": "Speaking Part 2",
+      "sectionType": "speaking_part",
+      "partNumber": 2,
+      "instruction": "You will have 1 minute to prepare and you should speak for 1 to 2 minutes.",
+      "passage": "",
+      "groups": [
+        {
+          "title": "Part 2: Long Turn (Cue Card)",
+          "instruction": "Here is your cue card.",
+          "questions": [
+            { "type": "speaking", "text": "Talk about the topic on your cue card.", "speakingPrompt": "Describe ... You should say: ...", "speakingDuration": 120, "marks": 1 }
+          ]
+        }
       ]
     }
   ]
 }
+Include ALL required sections (4 listening + 3 reading + 2 writing + 3 speaking) in the sections array. Ensure the exact question counts match the parity rules.`;
+}
 
-Use only these question "type" values: multiple_choice, true_false_not_given, short_answer, essay.
-Every multiple_choice must have four options (labels A–D) and a correctAnswer matching one label.`;
+const AIGeneratedQuestionSchema = z
+  .object({
+    type: z.string(),
+    text: z.string().optional(),
+    options: z.array(z.any()).optional(),
+    correctAnswer: z.any().optional(),
+    marks: z.number().optional(),
+    speakingPrompt: z.string().optional(),
+    speakingDuration: z.number().optional(),
+  })
+  .passthrough();
+
+const AIGeneratedGroupSchema = z
+  .object({
+    title: z.string().optional(),
+    instruction: z.string().optional(),
+    passage: z.string().optional(),
+    questions: z.array(AIGeneratedQuestionSchema).optional(),
+  })
+  .passthrough();
+
+const AIGeneratedSectionSchema = z
+  .object({
+    sectionTitle: z.string().optional(),
+    sectionType: z.string().optional(),
+    partNumber: z.number().int().optional(),
+    instruction: z.string().optional(),
+    instructions: z.string().optional(),
+    passage: z.string().optional(),
+    groups: z.array(AIGeneratedGroupSchema).optional(),
+  })
+  .passthrough();
+
+const AIGeneratedFullMockSchema = z
+  .object({
+    schemaVersion: z.string().optional(),
+    sections: z.array(AIGeneratedSectionSchema),
+  })
+  .passthrough();
+
+function countWords(input: string): number {
+  return String(input || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+function flattenQuestions(section: z.infer<typeof AIGeneratedSectionSchema>): Array<z.infer<typeof AIGeneratedQuestionSchema>> {
+  const groups = Array.isArray(section.groups) ? section.groups : [];
+  return groups.flatMap((g) => (Array.isArray(g.questions) ? g.questions : []));
+}
+
+function validateQuestionsBasics(sections: Array<z.infer<typeof AIGeneratedSectionSchema>>) {
+  const allowedTypes = new Set([
+    "multiple_choice",
+    "true_false_not_given",
+    "fill_blank",
+    "matching",
+    "matching_headings",
+    "summary_completion",
+    "sentence_completion",
+    "short_answer",
+    "essay",
+    "speaking",
+  ]);
+
+  for (const s of sections) {
+    for (const q of flattenQuestions(s)) {
+      const t = String(q.type || "").trim();
+      if (!allowedTypes.has(t)) throw new Error(`Unsupported question type: ${t}`);
+      if (t !== "essay" && t !== "speaking") {
+        if (q.correctAnswer == null || String(q.correctAnswer).trim().length === 0) {
+          throw new Error("Every objective question must include correctAnswer.");
+        }
+        if (t === "multiple_choice") {
+          const opts = Array.isArray(q.options) ? q.options : [];
+          if (opts.length !== 4) throw new Error("multiple_choice must include exactly 4 options.");
+          const ca = String(q.correctAnswer).trim().toUpperCase();
+          if (!["A", "B", "C", "D"].includes(ca)) throw new Error("multiple_choice correctAnswer must be A/B/C/D.");
+        }
+      } else if (t === "speaking") {
+        if (!q.text || String(q.text).trim().length === 0) throw new Error("Speaking questions must include text.");
+      }
+    }
+  }
+}
+
+function validateFullMockParity(input: z.infer<typeof AIGeneratedFullMockSchema>) {
+  const sections = input.sections;
+  const listening = sections.filter((s) => String(s.sectionType).toLowerCase().includes("listening"));
+  const reading = sections.filter((s) => String(s.sectionType).toLowerCase().includes("reading"));
+  const writing = sections.filter((s) => String(s.sectionType).toLowerCase().includes("writing"));
+  const speaking = sections.filter((s) => String(s.sectionType).toLowerCase().includes("speaking"));
+
+  if (listening.length !== 4) throw new Error("Full mock must include 4 listening sections.");
+  if (reading.length !== 3) throw new Error("Full mock must include 3 reading passages.");
+  if (writing.length !== 2) throw new Error("Full mock must include 2 writing tasks.");
+  if (speaking.length !== 3) throw new Error("Full mock must include 3 speaking parts.");
+
+  const listeningCounts = listening
+    .slice()
+    .sort((a, b) => Number(a.partNumber || 0) - Number(b.partNumber || 0))
+    .map((s) => flattenQuestions(s).length);
+  if (listeningCounts.some((c) => c !== 10)) {
+    throw new Error("Each listening section must include exactly 10 questions.");
+  }
+
+  const readingOrdered = reading.slice().sort((a, b) => Number(a.partNumber || 0) - Number(b.partNumber || 0));
+  const readingCounts = readingOrdered.map((s) => flattenQuestions(s).length);
+  const expectedReading = [13, 13, 14];
+  for (let i = 0; i < expectedReading.length; i++) {
+    if (readingCounts[i] !== expectedReading[i]) {
+      throw new Error("Reading must have question distribution 13/13/14 across passages 1-3.");
+    }
+  }
+  for (const s of readingOrdered) {
+    const wc = countWords(String(s.passage || ""));
+    if (wc < 650 || wc > 1100) {
+      throw new Error("Each reading passage must be 700–1000 words.");
+    }
+  }
+  validateQuestionsBasics(sections);
+}
+
+function validateOfficialModuleParity(
+  module: "listening" | "reading" | "writing" | "speaking",
+  input: z.infer<typeof AIGeneratedFullMockSchema>
+) {
+  const sections = input.sections;
+  const type = (v: unknown) => String(v || "").toLowerCase();
+
+  if (module === "listening") {
+    const listening = sections.filter((s) => type(s.sectionType).includes("listening"));
+    if (listening.length !== 4) throw new Error("Listening must include 4 sections.");
+    const ordered = listening.slice().sort((a, b) => Number(a.partNumber || 0) - Number(b.partNumber || 0));
+    for (let i = 0; i < 4; i++) {
+      const pn = Number(ordered[i]?.partNumber || 0);
+      if (pn !== i + 1) throw new Error("Listening sections must have partNumber 1..4.");
+      const c = flattenQuestions(ordered[i]).length;
+      if (c !== 10) throw new Error("Each listening section must include exactly 10 questions.");
+    }
+    validateQuestionsBasics(listening);
+    return;
+  }
+
+  if (module === "reading") {
+    const reading = sections.filter((s) => type(s.sectionType).includes("reading"));
+    if (reading.length !== 3) throw new Error("Reading must include 3 passages.");
+    const ordered = reading.slice().sort((a, b) => Number(a.partNumber || 0) - Number(b.partNumber || 0));
+    const expected = [13, 13, 14];
+    for (let i = 0; i < 3; i++) {
+      const pn = Number(ordered[i]?.partNumber || 0);
+      if (pn !== i + 1) throw new Error("Reading passages must have partNumber 1..3.");
+      const c = flattenQuestions(ordered[i]).length;
+      if (c !== expected[i]) throw new Error("Reading must have question distribution 13/13/14.");
+      const wc = countWords(String(ordered[i].passage || ""));
+      if (wc < 650 || wc > 1100) throw new Error("Each reading passage must be 700–1000 words.");
+    }
+    validateQuestionsBasics(reading);
+    return;
+  }
+
+  if (module === "writing") {
+    const writing = sections.filter((s) => type(s.sectionType).includes("writing"));
+    if (writing.length !== 2) throw new Error("Writing must include Task 1 and Task 2 as two sections.");
+    const ordered = writing.slice().sort((a, b) => Number(a.partNumber || 0) - Number(b.partNumber || 0));
+    const p1 = Number(ordered[0]?.partNumber || 0);
+    const p2 = Number(ordered[1]?.partNumber || 0);
+    if (p1 !== 1 || p2 !== 2) throw new Error("Writing sections must have partNumber 1 and 2.");
+    const i1 = String(ordered[0].instruction || ordered[0].instructions || "");
+    const i2 = String(ordered[1].instruction || ordered[1].instructions || "");
+    if (!i1.toLowerCase().includes("20")) throw new Error("Writing Task 1 must include 20 minutes instruction.");
+    if (!i2.toLowerCase().includes("40")) throw new Error("Writing Task 2 must include 40 minutes instruction.");
+    const q1 = flattenQuestions(ordered[0]);
+    const q2 = flattenQuestions(ordered[1]);
+    if (q1.length !== 1 || String(q1[0]?.type) !== "essay") throw new Error("Writing Task 1 must contain one essay question.");
+    if (q2.length !== 1 || String(q2[0]?.type) !== "essay") throw new Error("Writing Task 2 must contain one essay question.");
+    validateQuestionsBasics(writing);
+    return;
+  }
+
+  const speaking = sections.filter((s) => type(s.sectionType).includes("speaking"));
+  if (speaking.length !== 3) throw new Error("Speaking must include Part 1, 2, 3 as three sections.");
+  const ordered = speaking.slice().sort((a, b) => Number(a.partNumber || 0) - Number(b.partNumber || 0));
+  for (let i = 0; i < 3; i++) {
+    const pn = Number(ordered[i]?.partNumber || 0);
+    if (pn !== i + 1) throw new Error("Speaking parts must have partNumber 1..3.");
+  }
+  const part2Questions = flattenQuestions(ordered[1]);
+  if (part2Questions.length !== 1) throw new Error("Speaking Part 2 must include exactly one speaking question.");
+  const q = part2Questions[0];
+  if (String(q.type) !== "speaking") throw new Error("Speaking Part 2 question type must be speaking.");
+  if (!q.speakingPrompt || String(q.speakingPrompt).trim().length === 0) throw new Error("Speaking Part 2 must include speakingPrompt.");
+  if (Number(q.speakingDuration) !== 120) throw new Error("Speaking Part 2 speakingDuration must be 120.");
+  validateQuestionsBasics(speaking);
 }
 
 export async function POST(req: Request) {
@@ -478,6 +929,8 @@ export async function POST(req: Request) {
     await dbConnect();
 
     let prompt = "";
+    const isOfficialPracticeModule =
+      examType === "practice" && ["listening", "reading", "writing", "speaking"].includes(String(module));
 
     if (module === "full") {
       const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -497,6 +950,14 @@ export async function POST(req: Request) {
           speakingTitle: str(speakingTitle),
         }
       );
+    } else if (isOfficialPracticeModule && module === "listening") {
+      prompt = buildOfficialListeningModulePrompt(topic, difficulty, ieltsType, listeningTitle);
+    } else if (isOfficialPracticeModule && module === "reading") {
+      prompt = buildOfficialReadingModulePrompt(topic, difficulty, ieltsType, readingTitle);
+    } else if (isOfficialPracticeModule && module === "writing") {
+      prompt = buildOfficialWritingModulePrompt(topic, difficulty, ieltsType, writingTitle);
+    } else if (isOfficialPracticeModule && module === "speaking") {
+      prompt = buildOfficialSpeakingModulePrompt(topic, ieltsType, speakingTitle);
     } else if (module === "writing") {
       prompt = buildWritingPrompt(topic, difficulty, examType, ieltsType);
     } else if (module === "speaking") {
@@ -513,23 +974,93 @@ export async function POST(req: Request) {
       );
     }
 
-    const completion = await openai.chat.completions.create({
-      model: GENERATION_MODEL,
-      messages: [
-        { role: "system", content: AUTHENTIC_IELTS_SYSTEM },
-        { role: "user", content: prompt },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.72,
-      max_tokens: module === "full" ? 12000 : 8192,
-    });
+    let aiData: Record<string, unknown> | null = null;
+    let lastValidationError = "";
+    let lastJsonText = "";
 
-    const responseContent = completion.choices[0].message.content;
-    let aiData: Record<string, unknown>;
-    if (responseContent) {
-      aiData = JSON.parse(responseContent);
-    } else {
-      throw new Error("Empty response from language model");
+    const attemptLimit =
+      module === "full"
+        ? 3
+        : isOfficialPracticeModule && (module === "reading" || module === "listening")
+          ? 4
+          : isOfficialPracticeModule
+            ? 3
+            : 2;
+    const maxTokens =
+      module === "full"
+        ? 16000
+        : isOfficialPracticeModule && module === "reading"
+          ? 14000
+          : isOfficialPracticeModule && module === "listening"
+            ? 12000
+          : 8192;
+
+    for (let attempt = 0; attempt < attemptLimit; attempt++) {
+      try {
+        const shouldRepair =
+          attempt >= 2 &&
+          isOfficialPracticeModule &&
+          (module === "reading" || module === "listening") &&
+          lastJsonText.length > 0;
+
+        const extraGuidance =
+          attempt > 0 && module === "reading" && /700.?1000/i.test(lastValidationError)
+            ? '\n\nExtra requirement: For EACH reading_passage, "passage" MUST be 800–900 words (aim ~850). Do NOT output shorter summaries.'
+            : "";
+
+        const userPrompt = shouldRepair
+          ? `${prompt}
+
+Your previous JSON failed strict validation: ${lastValidationError}
+
+Repair the JSON below by making the MINIMUM necessary changes to satisfy all requirements. Do not remove required sections or question counts. Preserve the schema shape. Return ONLY valid JSON (no markdown).
+
+JSON to repair:
+${lastJsonText}
+${extraGuidance}`
+          : attempt === 0
+            ? prompt
+            : `${prompt}\n\nThe previous JSON violated strict IELTS parity requirements: ${lastValidationError}\nRegenerate the ENTIRE JSON from scratch and satisfy all requirements exactly.${extraGuidance}`;
+
+        const temperature =
+          attempt === 0 ? 0.62 : attempt === 1 ? 0.45 : 0.3;
+
+        const completion = await openai.chat.completions.create({
+          model: GENERATION_MODEL,
+          messages: [
+            { role: "system", content: AUTHENTIC_IELTS_SYSTEM },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature,
+          max_tokens: maxTokens,
+        });
+
+        const responseContent = completion.choices[0].message.content;
+        if (!responseContent) {
+          lastValidationError = "Empty response from language model";
+          continue;
+        }
+        lastJsonText = responseContent;
+
+        const parsed = JSON.parse(responseContent) as Record<string, unknown>;
+        if (module === "full") {
+          const full = AIGeneratedFullMockSchema.parse(parsed);
+          validateFullMockParity(full);
+        } else if (isOfficialPracticeModule) {
+          const full = AIGeneratedFullMockSchema.parse(parsed);
+          validateOfficialModuleParity(module, full);
+        }
+
+        aiData = parsed;
+        break;
+      } catch (e: any) {
+        lastValidationError = e?.message || "AI output validation failed";
+      }
+    }
+
+    if (!aiData) {
+      throw new Error(lastValidationError || "AI output failed validation");
     }
 
     const baseSlug = resolvedTitle
@@ -566,12 +1097,11 @@ export async function POST(req: Request) {
     const sectionsPayload: AISectionPayload[] = [];
 
     if (module === "full") {
-      if (!Array.isArray(aiData.sections) || aiData.sections.length === 0) {
-        throw new Error(
-          "Full mock response was incomplete (no sections). Try again, or generate one module at a time."
-        );
-      }
-      sectionsPayload.push(...(aiData.sections as AISectionPayload[]));
+      const full = AIGeneratedFullMockSchema.parse(aiData);
+      sectionsPayload.push(...(full.sections as AISectionPayload[]));
+    } else if (isOfficialPracticeModule) {
+      const full = AIGeneratedFullMockSchema.parse(aiData);
+      sectionsPayload.push(...(full.sections as AISectionPayload[]));
     } else {
       sectionsPayload.push({
         sectionTitle: (aiData.sectionTitle as string) || "Section 1",
@@ -582,12 +1112,39 @@ export async function POST(req: Request) {
       });
     }
 
-    for (let s = 0; s < sectionsPayload.length; s++) {
-      const sec = sectionsPayload[s];
+    const globalOrderForFull = (st: SectionSchemaType, partNumber: number) => {
+      const pn = Math.max(1, Math.floor(partNumber || 1));
+      if (st === "listening_part") return pn; // 1..4
+      if (st === "reading_passage") return 4 + pn; // 5..7
+      if (st === "writing_task") return 7 + pn; // 8..9
+      return 9 + pn; // speaking_part: 10..12
+    };
+
+    const sectionSkill = (st: SectionSchemaType): IQuestion["skill"] => {
+      if (st === "listening_part") return "listening";
+      if (st === "reading_passage") return "reading";
+      if (st === "writing_task") return "writing";
+      return "speaking";
+    };
+
+    const ordered = sectionsPayload
+      .map((sec, idx) => {
+        const st = mapToSectionType(sec.sectionType, module === "full" ? "" : module);
+        const resolved = module === "full" ? st : mapToSectionType(undefined, module);
+        const pn = typeof sec.partNumber === "number" ? sec.partNumber : idx + 1;
+        const order =
+          module === "full"
+            ? globalOrderForFull(resolved, pn)
+            : isOfficialPracticeModule
+            ? pn
+            : idx + 1;
+        return { sec, resolved, pn, order };
+      })
+      .sort((a, b) => a.order - b.order);
+
+    for (let s = 0; s < ordered.length; s++) {
+      const { sec, resolved: sectionTypeResolved, pn, order } = ordered[s];
       const groups = (sec.groups || []) as Parameters<typeof persistGroupsForSection>[2];
-      const st = mapToSectionType(sec.sectionType, module === "full" ? "" : module);
-      const sectionTypeResolved =
-        module === "full" ? st : mapToSectionType(undefined, module);
 
       const passageRaw =
         sectionTypeResolved === "listening_part"
@@ -598,17 +1155,21 @@ export async function POST(req: Request) {
               }
             ) || sec.passage || ""
           : sec.passage || "";
+
       const passageForSection = sanitizeIeltsCandidateText(passageRaw);
+      const instructions = sanitizeIeltsCandidateText(
+        sec.instructions || sec.instruction || "Read the instructions carefully."
+      );
 
       const newSection = await Section.create({
         testId: newTest._id,
-        title: sanitizeIeltsCandidateText(sec.sectionTitle || `Section ${s + 1}`),
-        order: s + 1,
+        title: sanitizeIeltsCandidateText(sec.sectionTitle || `Section ${order}`),
+        order,
         sectionType: sectionTypeResolved,
-        instructions: sanitizeIeltsCandidateText(
-          sec.instructions || sec.instruction || "Read the instructions carefully."
-        ),
-        passageText: passageForSection,
+        partNumber: module === "full" ? pn : undefined,
+        instructions,
+        ...(sectionTypeResolved === "reading_passage" ? { passageText: passageForSection } : {}),
+        ...(sectionTypeResolved === "listening_part" ? { audioTranscript: passageForSection } : {}),
         totalQuestions: 0,
       });
 
@@ -616,7 +1177,8 @@ export async function POST(req: Request) {
         newTest._id,
         newSection._id,
         groups,
-        totalQuestions + 1
+        totalQuestions + 1,
+        sectionSkill(sectionTypeResolved)
       );
 
       totalQuestions += added;
@@ -630,7 +1192,7 @@ export async function POST(req: Request) {
         try {
           const tts = await synthesizeListeningAudioToS3(
             passageForSection,
-            `listen-${newTest._id}-${s + 1}`
+            `listen-${newTest._id}-${String(pn)}`
           );
           if (tts?.url) {
             await Section.findByIdAndUpdate(newSection._id, {

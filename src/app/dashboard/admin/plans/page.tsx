@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import {
   Plus,
   Edit,
@@ -19,6 +20,7 @@ interface Plan {
   name: string;
   slug: string;
   description: string;
+  tierRank: number;
   price: {
     monthly: number;
     yearly: number;
@@ -41,11 +43,13 @@ interface Plan {
 }
 
 export default function AdminPlansPage() {
+  const { data: session } = useSession();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
   const [activeTab, setActiveTab] = useState<"active" | "archived">("active");
+  const canManage = session?.user?.role === "super-admin";
 
   useEffect(() => {
     fetchPlans();
@@ -66,16 +70,19 @@ export default function AdminPlansPage() {
   };
 
   const handleCreatePlan = () => {
+    if (!canManage) return;
     setEditingPlan(null);
     setShowModal(true);
   };
 
   const handleEditPlan = (plan: Plan) => {
+    if (!canManage) return;
     setEditingPlan(plan);
     setShowModal(true);
   };
 
   const handleDeletePlan = async (planId: string, planName: string) => {
+    if (!canManage) return;
     const result = await Swal.fire({
       title: "Delete Plan?",
       text: `This will archive "${planName}" (it will be deactivated and hidden from student pricing).`,
@@ -110,6 +117,7 @@ export default function AdminPlansPage() {
   };
 
   const handleHardDeletePlan = async (planId: string, planName: string) => {
+    if (!canManage) return;
     const result = await Swal.fire({
       title: "Permanently delete plan?",
       text: `This will permanently delete "${planName}". This cannot be undone.`,
@@ -141,6 +149,7 @@ export default function AdminPlansPage() {
   };
 
   const handleToggleActive = async (plan: Plan) => {
+    if (!canManage) return;
     try {
       const response = await fetch(`/api/plans/${plan.slug}`, {
         method: "PUT",
@@ -184,12 +193,18 @@ export default function AdminPlansPage() {
         </div>
         <button
           onClick={handleCreatePlan}
-          className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition-colors font-semibold"
+          disabled={!canManage}
+          className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus className="w-5 h-5" />
           Create New Plan
         </button>
       </div>
+      {!canManage && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-4 py-3 text-sm font-semibold">
+          Only super-admin can create, edit, archive, or delete plans.
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid md:grid-cols-4 gap-6 mb-8">
@@ -361,11 +376,12 @@ export default function AdminPlansPage() {
                   <td className="p-4 text-center">
                     <button
                       onClick={() => handleToggleActive(plan)}
+                      disabled={!canManage}
                       className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${
                         plan.isActive
                           ? "bg-green-100 text-green-700"
                           : "bg-red-100 text-red-700"
-                      }`}
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                       {plan.isActive ? (
                         <>
@@ -389,7 +405,8 @@ export default function AdminPlansPage() {
                     <div className="flex items-center justify-center gap-2">
                       <button
                         onClick={() => handleEditPlan(plan)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        disabled={!canManage}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Edit"
                       >
                         <Edit className="w-4 h-4" />
@@ -397,7 +414,8 @@ export default function AdminPlansPage() {
                       {activeTab === "archived" && (
                         <button
                           onClick={() => handleHardDeletePlan(plan._id, plan.name)}
-                          className="p-2 text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
+                          disabled={!canManage}
+                          className="p-2 text-rose-700 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Delete permanently"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -406,7 +424,8 @@ export default function AdminPlansPage() {
                       {activeTab === "active" && (
                         <button
                           onClick={() => handleDeletePlan(plan._id, plan.name)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          disabled={!canManage}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Archive"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -429,7 +448,8 @@ export default function AdminPlansPage() {
             {activeTab === "active" && (
               <button
                 onClick={handleCreatePlan}
-                className="text-blue-600 hover:text-blue-700 font-semibold"
+                disabled={!canManage}
+                className="text-blue-600 hover:text-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Create your first plan
               </button>
@@ -463,10 +483,12 @@ function PlanModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  const isEditing = Boolean(plan);
   const [formData, setFormData] = useState({
     name: plan?.name || "",
     slug: plan?.slug || "",
     description: plan?.description || "",
+    tierRank: plan?.tierRank || 1,
     monthlyPrice: plan?.price.monthly || 0,
     yearlyPrice: plan?.price.yearly || 0,
     mockTestsUnlimited: plan?.features.mockTests === "unlimited",
@@ -492,6 +514,7 @@ function PlanModal({
   });
 
   const [saving, setSaving] = useState(false);
+  const isFreeSlug = (plan?.slug || formData.slug).trim().toLowerCase() === "free";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -510,10 +533,18 @@ function PlanModal({
         throw new Error("Price cannot be negative");
       }
 
+      const normalizedTierRank = Number(formData.tierRank ?? 1);
+      if (!Number.isFinite(normalizedTierRank) || normalizedTierRank < 1) {
+        throw new Error("tierRank must be a number >= 1");
+      }
+
+      const isFree = normalizedSlug === "free";
+
       const payload = {
         name: formData.name,
         slug: normalizedSlug,
         description: formData.description,
+        tierRank: isFree ? 1 : normalizedTierRank,
         price: {
           monthly: Number(formData.monthlyPrice),
           yearly: Number(formData.yearlyPrice),
@@ -530,7 +561,7 @@ function PlanModal({
             .split("\n")
             .filter((f) => f.trim()),
         },
-        isPremium: formData.isPremium,
+        isPremium: isFree ? false : formData.isPremium,
         trialDays: Number(formData.trialDays),
         displayOrder: Number(formData.displayOrder),
       };
@@ -608,8 +639,23 @@ function PlanModal({
                 required
                 value={formData.slug}
                 onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                disabled={isEditing}
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
                 placeholder="pro-achiever"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Tier Rank *
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={formData.tierRank}
+                onChange={(e) => setFormData({ ...formData, tierRank: Number(e.target.value) })}
+                disabled={isFreeSlug}
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
               />
             </div>
 
@@ -835,7 +881,8 @@ function PlanModal({
                   type="checkbox"
                   checked={formData.isPremium}
                   onChange={(e) => setFormData({ ...formData, isPremium: e.target.checked })}
-                  className="w-5 h-5 text-blue-600"
+                  disabled={isFreeSlug}
+                  className="w-5 h-5 text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 <span className="text-sm font-medium text-slate-700">Mark as Popular (Premium)</span>
               </label>

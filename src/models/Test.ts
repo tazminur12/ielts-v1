@@ -19,6 +19,16 @@ export interface ITest extends Document {
   instructions?: string;
   coverImage?: string;
   createdBy: mongoose.Types.ObjectId;
+  // Versioning fields
+  version: number;
+  parentTestId?: mongoose.Types.ObjectId;
+  isLatestVersion: boolean;
+  changeLog: Array<{
+    version: number;
+    changedAt: Date;
+    changedBy?: mongoose.Types.ObjectId;
+    summary?: string;
+  }>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -104,6 +114,27 @@ const TestSchema: Schema<ITest> = new Schema(
       ref: "User",
       required: true,
     },
+    version: {
+      type: Number,
+      default: 1,
+    },
+    parentTestId: {
+      type: Schema.Types.ObjectId,
+      ref: "Test",
+      default: null,
+    },
+    isLatestVersion: {
+      type: Boolean,
+      default: true,
+    },
+    changeLog: [
+      {
+        version: { type: Number },
+        changedAt: { type: Date },
+        changedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        summary: { type: String },
+      },
+    ],
   },
   {
     timestamps: true,

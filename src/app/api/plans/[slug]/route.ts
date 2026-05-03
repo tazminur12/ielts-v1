@@ -75,6 +75,23 @@ export async function PUT(
     const { slug } = await context.params;
 
     const body = await req.json();
+    delete body.slug;
+
+    if (body.tierRank != null) {
+      const tr = Number(body.tierRank);
+      if (!Number.isFinite(tr) || tr < 1) {
+        return NextResponse.json(
+          { success: false, error: "tierRank must be a number >= 1" },
+          { status: 400 }
+        );
+      }
+      if (String(slug) === "free" && tr !== 1) {
+        return NextResponse.json(
+          { success: false, error: 'The "free" plan must have tierRank = 1' },
+          { status: 400 }
+        );
+      }
+    }
 
     const plan = await Plan.findOneAndUpdate(
       { slug },

@@ -18,6 +18,7 @@ import {
   Gem,
   Search,
   Package,
+  PenLine,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
@@ -60,6 +61,7 @@ export default function Sidebar() {
   const staffAdminLinks = [
     { name: 'Orders', href: '/dashboard/orders', icon: CreditCard },
     { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart },
+    { name: 'Writing Reviews', href: '/dashboard/admin/writing-reviews', icon: PenLine },
   ];
 
   const adminLinks = [

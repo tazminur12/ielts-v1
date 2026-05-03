@@ -6,10 +6,23 @@ export interface IAttempt extends Document {
   userId?: mongoose.Types.ObjectId;
   guestId?: string;
   testId: mongoose.Types.ObjectId;
+  testVersionId?: mongoose.Types.ObjectId;
   status: AttemptStatus;
   startedAt: Date;
+  durationSeconds?: number;
+  expiresAt?: Date;
+  activeSessionId?: string;
+  lastSeenAt?: Date;
   submittedAt?: Date;
   timeSpent?: number; // in seconds
+  timeRemaining?: number; // in seconds (for auto-save)
+  lastAutoSave?: Date;
+  // Snapshot of test questions and correct answers at time of attempt
+  questionSnapshot?: Array<{
+    questionId: mongoose.Types.ObjectId;
+    questionNumber: number;
+    correctAnswer?: string | string[];
+  }>;
   // Scores
   rawScore?: number;       // number of correct answers (for objective)
   totalMarks?: number;     // total possible marks
@@ -58,6 +71,17 @@ const AttemptSchema: Schema<IAttempt> = new Schema(
       required: true,
       index: true,
     },
+    testVersionId: {
+      type: Schema.Types.ObjectId,
+      ref: "Test",
+    },
+    questionSnapshot: [
+      {
+        questionId: { type: Schema.Types.ObjectId },
+        questionNumber: { type: Number },
+        correctAnswer: { type: Schema.Types.Mixed },
+      },
+    ],
     status: {
       type: String,
       enum: ["in_progress", "submitted", "evaluated"],
@@ -67,11 +91,32 @@ const AttemptSchema: Schema<IAttempt> = new Schema(
       type: Date,
       default: Date.now,
     },
+    durationSeconds: {
+      type: Number,
+    },
+    expiresAt: {
+      type: Date,
+      index: true,
+    },
+    activeSessionId: {
+      type: String,
+      index: true,
+    },
+    lastSeenAt: {
+      type: Date,
+      index: true,
+    },
     submittedAt: {
       type: Date,
     },
     timeSpent: {
       type: Number,
+    },
+    timeRemaining: {
+      type: Number,
+    },
+    lastAutoSave: {
+      type: Date,
     },
     rawScore: {
       type: Number,

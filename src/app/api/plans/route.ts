@@ -39,9 +39,10 @@ export async function GET(req: NextRequest) {
     const plans = await Plan.find({ isActive: true }).sort({ displayOrder: 1 }).lean();
     await redisSetJson(cacheKey, plans, 120);
 
-    return NextResponse.json({
-      success: true,
-      data: plans,
+    return withCacheHeaders(NextResponse.json({ success: true, data: plans }), {
+      kind: "public",
+      sMaxAge: 60,
+      swr: 600,
     });
   } catch (error: any) {
     console.error("Error fetching plans:", error);
@@ -89,6 +90,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const normalizedSlug = String(slug).toLowerCase().trim();
     const normalizedTierRank = Number(tierRank ?? 1);
     if (!Number.isFinite(normalizedTierRank) || normalizedTierRank < 1) {
       return NextResponse.json(
@@ -98,7 +100,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if slug already exists
-    const existingPlan = await Plan.findOne({ slug });
+    const existingPlan = await Plan.findOne({ slug: normalizedSlug });
     if (existingPlan) {
       return NextResponse.json(
         {
@@ -111,14 +113,14 @@ export async function POST(req: NextRequest) {
 
     const plan = await Plan.create({
       name,
-      slug,
+      slug: normalizedSlug,
       description,
-      tierRank: normalizedTierRank,
+      tierRank: normalizedSlug === "free" ? 1 : normalizedTierRank,
       price,
       features,
       displayOrder: displayOrder || 0,
       trialDays: trialDays || 0,
-      isPremium: isPremium || false,
+      isPremium: normalizedSlug === "free" ? false : isPremium || false,
     });
 
     await Promise.all([

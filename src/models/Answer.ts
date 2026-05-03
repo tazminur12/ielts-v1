@@ -22,6 +22,8 @@ export interface IAnswer extends Document {
   // AI evaluation (for writing/speaking only)
   aiEvaluation?: {
     bandScore?: number;
+    fluencyScore?: number;
+    pronunciationScore?: number;
     grammarScore?: number;
     vocabularyScore?: number;
     coherenceScore?: number;
@@ -30,6 +32,19 @@ export interface IAnswer extends Document {
     suggestions?: string[];
     evaluatedAt?: Date;
   };
+  writingEvaluation?: {
+    taskAchievement: number;
+    coherenceCohesion: number;
+    lexicalResource: number;
+    grammaticalRange: number;
+    overallBand: number;
+    feedback: string;
+    suggestions: string[];
+    evaluatedAt: Date;
+    evaluatedBy: "ai" | "manual";
+    examinerNotes?: string;
+  };
+  manualReviewRequestedAt?: Date;
   // Show correct answer after submission (practice mode)
   correctAnswer?: string | string[];
   timeSpent?: number; // seconds on this question
@@ -101,6 +116,8 @@ const AnswerSchema: Schema<IAnswer> = new Schema(
     },
     aiEvaluation: {
       bandScore: { type: Number },
+      fluencyScore: { type: Number },
+      pronunciationScore: { type: Number },
       grammarScore: { type: Number },
       vocabularyScore: { type: Number },
       coherenceScore: { type: Number },
@@ -108,6 +125,22 @@ const AnswerSchema: Schema<IAnswer> = new Schema(
       feedback: { type: String },
       suggestions: [{ type: String }],
       evaluatedAt: { type: Date },
+    },
+    writingEvaluation: {
+      taskAchievement: { type: Number },
+      coherenceCohesion: { type: Number },
+      lexicalResource: { type: Number },
+      grammaticalRange: { type: Number },
+      overallBand: { type: Number },
+      feedback: { type: String },
+      suggestions: [{ type: String }],
+      evaluatedAt: { type: Date },
+      evaluatedBy: { type: String, enum: ["ai", "manual"] },
+      examinerNotes: { type: String },
+    },
+    manualReviewRequestedAt: {
+      type: Date,
+      index: true,
     },
     correctAnswer: {
       type: Schema.Types.Mixed,
