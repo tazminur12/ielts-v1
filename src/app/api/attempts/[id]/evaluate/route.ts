@@ -9,32 +9,13 @@ import Section from "@/models/Section";
 import { getGuestId } from "@/lib/guestSession";
 import { rateLimitOrThrow } from "@/lib/ratelimit";
 import { z } from "zod";
-import { transcribeAudio, calculateOverallBand } from "@/lib/aiEvaluation";
-import {
-  calculateOverallSpeakingBand,
-  evaluateSpeakingWithRubric,
-  formatSpeakingFeedback,
-  uniqueSuggestions as uniqueSpeakingSuggestions,
-} from "@/lib/speakingEvaluation";
-import {
-  calculateOverallWritingBand,
-  evaluateWritingWithRubric,
-  formatWritingFeedback,
-  uniqueSuggestions as uniqueWritingSuggestions,
-} from "@/lib/writingEvaluation";
+import { getAiQueue } from "@/lib/bullmq";
+import { calculateOverallBand } from "@/lib/aiEvaluation";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const BodySchema = z.object({}).strict();
-
-async function fetchAudioAsBuffer(audioUrl: string): Promise<{ buffer: Buffer; mimeType: string }> {
-  const res = await fetch(audioUrl);
-  if (!res.ok) throw new Error("Failed to fetch audio");
-  const mimeType = res.headers.get("content-type") || "audio/webm";
-  const arrayBuffer = await res.arrayBuffer();
-  return { buffer: Buffer.from(arrayBuffer), mimeType };
-}
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -61,101 +42,56 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       (a) => a.questionType === "speaking" && typeof a.aiEvaluation?.bandScore !== "number" && typeof a.audioUrl === "string" && a.audioUrl.trim()
     );
     if (pendingSpeaking) {
-      const q: any = await Question.findById(pendingSpeaking.questionId).lean();
-      if (!q) return NextResponse.json({ ok: true, status: attempt.status, processed: null });
-      const section: any = q.sectionId ? await Section.findById(q.sectionId).lean() : null;
-      const pn = Number(section?.partNumber || section?.order || 1);
-      const partNumber = (pn === 2 ? 2 : pn === 3 ? 3 : 1) as 1 | 2 | 3;
-      const prompt = String(q.speakingPrompt || q.questionText || "").trim();
+      // ✅ Queue speaking evaluation instead of blocking
+      const aiQueue = getAiQueue();
+      if (aiQueue) {
+        await aiQueue.add('evaluate-speaking', {
+          answerId: String(pendingSpeaking._id),
+          attemptId: id,
+          userId: session?.user?.id || null,
+          guestId: guestId || null,
+        }, {
+          priority: 50, // Higher priority for speaking
+          delay: 0,
+          attempts: 3,
+        });
+      }
 
-      const { buffer, mimeType } = await fetchAudioAsBuffer(String(pendingSpeaking.audioUrl));
-      const transcript = await transcribeAudio(buffer, mimeType);
-
-      const evaluationJson = await evaluateSpeakingWithRubric({ partNumber, prompt, transcript });
-      const fluencyCoherence = evaluationJson.criteria.fluencyCoherence.score;
-      const lexicalResource = evaluationJson.criteria.lexicalResource.score;
-      const grammaticalRange = evaluationJson.criteria.grammaticalRange.score;
-      const pronunciation = evaluationJson.criteria.pronunciation.score;
-      const overallBand = calculateOverallSpeakingBand([fluencyCoherence, lexicalResource, grammaticalRange, pronunciation]);
-
-      const feedback = formatSpeakingFeedback(evaluationJson);
-      const suggestions = uniqueSpeakingSuggestions([
-        ...evaluationJson.overallSuggestions,
-        ...evaluationJson.criteria.fluencyCoherence.tips,
-        ...evaluationJson.criteria.lexicalResource.tips,
-        ...evaluationJson.criteria.grammaticalRange.tips,
-        ...evaluationJson.criteria.pronunciation.tips,
-      ]);
-
-      await Answer.findByIdAndUpdate(pendingSpeaking._id, {
-        $set: {
-          transcribedText: transcript,
-          aiEvaluation: {
-            bandScore: overallBand,
-            fluencyScore: fluencyCoherence,
-            pronunciationScore: pronunciation,
-            coherenceScore: fluencyCoherence,
-            vocabularyScore: lexicalResource,
-            grammarScore: grammaticalRange,
-            feedback,
-            suggestions,
-            evaluatedAt: new Date(),
-          },
-          marksAwarded: overallBand,
-        },
+      // Return immediately - evaluation happens in background
+      return NextResponse.json({ 
+        ok: true, 
+        status: "submitted", 
+        queued: true,
+        message: "Speaking evaluation queued"
       });
-
-      return NextResponse.json({ ok: true, status: "submitted", processed: { type: "speaking", answerId: String(pendingSpeaking._id) } });
     }
 
     const pendingWriting = answers.find(
       (a) => a.questionType === "essay" && !a.writingEvaluation?.overallBand && typeof a.textAnswer === "string" && a.textAnswer.trim()
     );
     if (pendingWriting) {
-      const q: any = await Question.findById(pendingWriting.questionId).lean();
-      if (!q) return NextResponse.json({ ok: true, status: attempt.status, processed: null });
-      const section: any = q.sectionId ? await Section.findById(q.sectionId).lean() : null;
-      const taskType = Number(section?.partNumber || section?.order || 1) === 2 ? ("task2" as const) : ("task1" as const);
-      const prompt = String(section?.instructions || q.questionText || "").trim();
+      // ✅ Queue writing evaluation instead of blocking
+      const aiQueue = getAiQueue();
+      if (aiQueue) {
+        await aiQueue.add('evaluate-writing', {
+          answerId: String(pendingWriting._id),
+          attemptId: id,
+          userId: session?.user?.id || null,
+          guestId: guestId || null,
+        }, {
+          priority: 40, // Lower priority than speaking
+          delay: 0,
+          attempts: 3,
+        });
+      }
 
-      const evaluationJson = await evaluateWritingWithRubric({
-        taskType,
-        prompt,
-        userResponse: String(pendingWriting.textAnswer).trim(),
+      // Return immediately - evaluation happens in background
+      return NextResponse.json({ 
+        ok: true, 
+        status: "submitted", 
+        queued: true,
+        message: "Writing evaluation queued"
       });
-
-      const taskAchievement = evaluationJson.criteria.taskAchievement.score;
-      const coherenceCohesion = evaluationJson.criteria.coherenceCohesion.score;
-      const lexicalResource = evaluationJson.criteria.lexicalResource.score;
-      const grammaticalRange = evaluationJson.criteria.grammaticalRange.score;
-      const overallBand = calculateOverallWritingBand([taskAchievement, coherenceCohesion, lexicalResource, grammaticalRange]);
-      const feedback = formatWritingFeedback(evaluationJson);
-      const suggestions = uniqueWritingSuggestions([
-        ...evaluationJson.overallSuggestions,
-        ...evaluationJson.criteria.taskAchievement.tips,
-        ...evaluationJson.criteria.coherenceCohesion.tips,
-        ...evaluationJson.criteria.lexicalResource.tips,
-        ...evaluationJson.criteria.grammaticalRange.tips,
-      ]);
-
-      await Answer.findByIdAndUpdate(pendingWriting._id, {
-        $set: {
-          writingEvaluation: {
-            taskAchievement,
-            coherenceCohesion,
-            lexicalResource,
-            grammaticalRange,
-            overallBand,
-            feedback,
-            suggestions,
-            evaluatedAt: new Date(),
-            evaluatedBy: "ai",
-          },
-          marksAwarded: overallBand,
-        },
-      });
-
-      return NextResponse.json({ ok: true, status: "submitted", processed: { type: "writing", answerId: String(pendingWriting._id) } });
     }
 
     const refreshedAnswers: any[] = await Answer.find({ attemptId: id, ...(actor as any) }).lean();

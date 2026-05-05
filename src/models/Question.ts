@@ -30,6 +30,7 @@ export interface IQuestion extends Document {
   // Speaking prompt details
   speakingPrompt?: string;
   speakingDuration?: number; // seconds
+  speakingAudioUrl?: string; // Examiner voice for the question (S3 URL)
   // Image or resource attached to this question
   imageUrl?: string;
   // Explanation shown after attempt
@@ -111,6 +112,9 @@ const QuestionSchema: Schema<IQuestion> = new Schema(
     speakingDuration: {
       type: Number,
       default: 60, // 60 seconds default
+    },
+    speakingAudioUrl: {
+      type: String, // S3 URL for examiner voice audio
     },
     imageUrl: {
       type: String, // S3 URL

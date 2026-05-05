@@ -7,6 +7,7 @@ import Answer from "@/models/Answer";
 import Question from "@/models/Question";
 import { uploadToS3 } from "@/lib/s3Upload";
 import { getGuestId } from "@/lib/guestSession";
+import { getSpeakingAnalysisQueue } from "@/lib/bullmq";
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,12 +48,28 @@ export async function POST(req: NextRequest) {
           questionId,
           questionNumber: (question as any).questionNumber,
           questionType: (question as any).questionType,
+          questionText: String((question as any).speakingPrompt || (question as any).questionText || "").trim(),
           audioUrl: uploaded.url,
           ...(session?.user?.id ? { userId: session.user.id } : { guestId: guestId! }),
         },
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
+
+    // ✅ Queue audio analysis for background processing
+    // This allows upload response to return immediately without blocking on analysis
+    const analysisQueue = getSpeakingAnalysisQueue();
+    if (analysisQueue) {
+      await analysisQueue.add('analyze-audio', {
+        answerId: String(answer._id),
+        audioUrl: uploaded.url,
+        questionId,
+      }, {
+        // Lower priority: analysis is not blocking
+        priority: 1,
+        delay: 500, // Wait for user to move to next question
+      });
+    }
 
     return NextResponse.json({
       audioUrl: uploaded.url,

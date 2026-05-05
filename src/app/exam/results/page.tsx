@@ -9,6 +9,7 @@ import {
   Home, Clock, Target, TrendingUp, ChevronDown, ChevronUp,
   Sparkles, FileText, Award,
 } from "lucide-react";
+import SpeakingResultCard from "@/components/exam/SpeakingResultCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,12 +21,29 @@ interface AIEvaluation {
   taskAchievementScore?: number;
   feedback?: string;
   suggestions?: string[];
+  fluencyScore?: number;
+  pronunciationScore?: number;
+}
+
+interface SpeakingEvaluation {
+  transcript: string;
+  fluencyCoherence: { bandScore: number; feedback: string; tips: string[] };
+  lexicalResource: { bandScore: number; feedback: string; tips: string[] };
+  grammaticalRange: { bandScore: number; feedback: string; tips: string[] };
+  pronunciation: { bandScore: number; feedback: string; tips: string[] };
+  overallBand: number;
+  generalFeedback: string;
+  strengths: string[];
+  weaknesses: string[];
+  evaluatedAt: Date;
+  evaluatedBy: "ai" | "manual";
 }
 
 interface Answer {
   _id: string;
   questionNumber: number;
   questionType: string;
+  questionText?: string;
   selectedOption?: string;
   textAnswer?: string;
   matchedAnswer?: string;
@@ -34,7 +52,10 @@ interface Answer {
   marksAwarded?: number;
   correctAnswer?: string | string[];
   aiEvaluation?: AIEvaluation;
+  speakingEvaluation?: SpeakingEvaluation;
   transcribedText?: string;
+  audioUrl?: string;
+  testId?: string;
 }
 
 interface SectionBands {
@@ -199,6 +220,32 @@ function ResultsContent() {
     })();
   }, [attemptId]);
 
+  // ── Poll for results while processing ──────────────────────────────────────
+  useEffect(() => {
+    if (!attemptId || !attempt || attempt.status !== "submitted" || attempt.overallBand) {
+      return; // Don't poll if not pending
+    }
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/attempts/${attemptId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setAttempt(data.attempt);
+        setAnswers(data.answers ?? []);
+        
+        // Stop polling once we have overall band
+        if (data.attempt.overallBand) {
+          clearInterval(pollInterval);
+        }
+      } catch (err) {
+        console.error('Error polling for results:', err);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [attemptId, attempt]);
+
   // ── Loading ──────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -231,6 +278,10 @@ function ResultsContent() {
 
   const objectiveAnswers = answers.filter(
     (a) => a.questionType !== "essay" && a.questionType !== "speaking"
+  ).sort((a, b) => a.questionNumber - b.questionNumber);
+
+  const speakingAnswers = answers.filter(
+    (a) => a.questionType === "speaking" && a.speakingEvaluation
   ).sort((a, b) => a.questionNumber - b.questionNumber);
 
   const aiAnswers = answers.filter((a) => a.aiEvaluation);
@@ -435,6 +486,42 @@ function ResultsContent() {
                 value={formatTime(attempt.timeSpent)}
               />
             )}
+          </div>
+        )}
+
+        {/* ── Speaking Evaluation Results ─────────────────────────────── */}
+        {speakingAnswers.length > 0 && (
+          <div>
+            <SectionHeader icon={<Mic size={16} />} title="Speaking Evaluation" />
+            <div className="mt-3 space-y-4">
+              {speakingAnswers.map((answer) => {
+                const eval_data = answer.speakingEvaluation!;
+                // Infer part number from question number ranges
+                let partNumber: 1 | 2 | 3 = 1;
+                if (answer.questionNumber > 3) partNumber = 2;
+                if (answer.questionNumber > 8) partNumber = 3;
+
+                return (
+                  <SpeakingResultCard
+                    key={answer._id}
+                    questionNumber={answer.questionNumber}
+                    questionText={answer.questionText || `Speaking Question ${answer.questionNumber}`}
+                    partNumber={partNumber}
+                    evaluation={{
+                      fluencyCoherence: eval_data.fluencyCoherence,
+                      lexicalResource: eval_data.lexicalResource,
+                      grammaticalRange: eval_data.grammaticalRange,
+                      pronunciation: eval_data.pronunciation,
+                      overallBand: eval_data.overallBand,
+                      generalFeedback: eval_data.generalFeedback,
+                      strengths: eval_data.strengths,
+                      weaknesses: eval_data.weaknesses,
+                    }}
+                    transcript={eval_data.transcript}
+                  />
+                );
+              })}
+            </div>
           </div>
         )}
 
