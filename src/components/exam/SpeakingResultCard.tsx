@@ -147,6 +147,8 @@ export default function SpeakingResultCard({
   >(null);
   const colors = getBandColor(evaluation.overallBand);
   const partLabel = `Part ${partNumber}`;
+  const wordCount = transcript?.trim() ? transcript.trim().split(/\s+/).length : 0;
+  const showCriteria = wordCount >= 10;
 
   return (
     <div className={`rounded-2xl border ${colors.border} ${colors.bg} overflow-hidden shadow-sm`}>
@@ -227,48 +229,56 @@ export default function SpeakingResultCard({
 
       {/* ── Criterion Scores ────────────────────────────────────────────────── */}
       <div className="px-5 py-4">
-        <button
-          onClick={() =>
-            setExpandedSection(expandedSection === "criteria" ? null : "criteria")
-          }
-          className="w-full flex items-center justify-between gap-3 mb-3 hover:text-slate-700 transition-colors"
-        >
-          <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">
-            Detailed Criteria Breakdown
-          </span>
-          {expandedSection === "criteria" ? (
-            <ChevronUp size={16} className="text-slate-400" />
-          ) : (
-            <ChevronDown size={16} className="text-slate-400" />
-          )}
-        </button>
+        {showCriteria ? (
+          <>
+            <button
+              onClick={() =>
+                setExpandedSection(expandedSection === "criteria" ? null : "criteria")
+              }
+              className="w-full flex items-center justify-between gap-3 mb-3 hover:text-slate-700 transition-colors"
+            >
+              <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">
+                Detailed Criteria Breakdown
+              </span>
+              {expandedSection === "criteria" ? (
+                <ChevronUp size={16} className="text-slate-400" />
+              ) : (
+                <ChevronDown size={16} className="text-slate-400" />
+              )}
+            </button>
 
-        {expandedSection === "criteria" && (
-          <div className="space-y-2.5">
-            <CriterionBar
-              label="Fluency and Coherence"
-              bandScore={evaluation.fluencyCoherence.bandScore}
-              feedback={evaluation.fluencyCoherence.feedback}
-              tips={evaluation.fluencyCoherence.tips}
-            />
-            <CriterionBar
-              label="Lexical Resource"
-              bandScore={evaluation.lexicalResource.bandScore}
-              feedback={evaluation.lexicalResource.feedback}
-              tips={evaluation.lexicalResource.tips}
-            />
-            <CriterionBar
-              label="Grammatical Range & Accuracy"
-              bandScore={evaluation.grammaticalRange.bandScore}
-              feedback={evaluation.grammaticalRange.feedback}
-              tips={evaluation.grammaticalRange.tips}
-            />
-            <CriterionBar
-              label="Pronunciation"
-              bandScore={evaluation.pronunciation.bandScore}
-              feedback={evaluation.pronunciation.feedback}
-              tips={evaluation.pronunciation.tips}
-            />
+            {expandedSection === "criteria" && (
+              <div className="space-y-2.5">
+                <CriterionBar
+                  label="Fluency and Coherence"
+                  bandScore={evaluation.fluencyCoherence.bandScore}
+                  feedback={evaluation.fluencyCoherence.feedback}
+                  tips={evaluation.fluencyCoherence.tips}
+                />
+                <CriterionBar
+                  label="Lexical Resource"
+                  bandScore={evaluation.lexicalResource.bandScore}
+                  feedback={evaluation.lexicalResource.feedback}
+                  tips={evaluation.lexicalResource.tips}
+                />
+                <CriterionBar
+                  label="Grammatical Range & Accuracy"
+                  bandScore={evaluation.grammaticalRange.bandScore}
+                  feedback={evaluation.grammaticalRange.feedback}
+                  tips={evaluation.grammaticalRange.tips}
+                />
+                <CriterionBar
+                  label="Pronunciation"
+                  bandScore={evaluation.pronunciation.bandScore}
+                  feedback={evaluation.pronunciation.feedback}
+                  tips={evaluation.pronunciation.tips}
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-700">
+            Response was too brief to show a detailed criteria breakdown.
           </div>
         )}
       </div>

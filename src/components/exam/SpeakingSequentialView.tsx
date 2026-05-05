@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   Clock, AlertCircle, CheckCircle, Mic, MicOff,
   Loader2, ChevronRight, Volume2
@@ -134,6 +134,7 @@ export default function SpeakingSequentialView({
   const [now, setNow] = useState(() => Date.now());
   const [autoPlayStarted, setAutoPlayStarted] = useState<Record<string, boolean>>({}); // Track if auto-play already happened for each question
   const [questionTextRevealed, setQuestionTextRevealed] = useState<Record<string, boolean>>({}); // Track if question text should be shown after voice plays
+  const autoPlayInFlightRef = useRef<Record<string, boolean>>({});
 
   const currentPart = allQuestionsByPart[currentPartIndex];
   const currentQuestion = currentPart?.questions[currentQuestionIndex];
@@ -184,94 +185,69 @@ export default function SpeakingSequentialView({
       return;
     }
 
-    // Helper: Generate synthetic audio using Web Audio API (for testing when real audio not available)
-    const generateSyntheticAudio = (durationSeconds: number = 8): Promise<HTMLAudioElement> => {
-      return new Promise((resolve) => {
-        try {
-          const createAndPlayAudio = () => {
-            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-            const duration = Math.max(3, Math.min(durationSeconds, 15));
-            const audioBuffer = audioContext.createBuffer(1, audioContext.sampleRate * duration, audioContext.sampleRate);
-            const data = audioBuffer.getChannelData(0);
-            
-            // Generate a pleasant tone (silent for now - just duration)
-            for (let i = 0; i < data.length; i++) {
-              data[i] = 0; // Silent
-            }
-            
-            return { audioContext, audioBuffer, duration };
-          };
-          
-          // Create a mock audio element for compatibility
-          const mockAudio = new Audio() as any;
-          mockAudio.onended = null;
-          mockAudio.play = () => {
-            try {
-              const { audioContext, audioBuffer, duration } = createAndPlayAudio();
-              const source = audioContext.createBufferSource();
-              source.buffer = audioBuffer;
-              source.connect(audioContext.destination);
-              source.start(0);
-              
-              // Call onended callback after duration
-              setTimeout(() => {
-                if (mockAudio.onended) mockAudio.onended();
-              }, duration * 1000);
-            } catch (e) {
-              console.warn("Failed to play synthetic audio", e);
-              if (mockAudio.onended) mockAudio.onended();
-            }
-            return Promise.resolve();
-          };
-          
-          resolve(mockAudio);
-        } catch (err) {
-          console.warn("Web Audio API not available, using silent fallback", err);
-          // Fallback: simple duration timer
-          const mockAudio = new Audio() as any;
-          mockAudio.onended = null;
-          mockAudio.play = () => {
-            const duration = Math.max(3, Math.min(durationSeconds, 15));
-            setTimeout(() => {
-              if (mockAudio.onended) mockAudio.onended();
-            }, duration * 1000);
-            return Promise.resolve();
-          };
-          resolve(mockAudio);
+    if (autoPlayInFlightRef.current[currentQuestion._id]) {
+      return;
+    }
+    autoPlayInFlightRef.current[currentQuestion._id] = true;
+
+    const speakPrompt = (text: string): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        if (!("speechSynthesis" in window)) {
+          reject(new Error("SpeechSynthesis not supported"));
+          return;
         }
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "en-GB";
+        utterance.rate = 1;
+        utterance.pitch = 1;
+        utterance.onend = () => resolve();
+        utterance.onerror = () => resolve();
+        if (document.hidden) {
+          resolve();
+          return;
+        }
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
       });
     };
 
     // Only auto-play if examiner audio exists OR Part 1/3 (not Part 2 where student reads cue card)
     if (currentPart?.partNumber !== 2) {
       (async () => {
-        let audio: HTMLAudioElement;
-        
-        if (currentQuestion.speakingAudioUrl) {
-          // Use real audio URL if available
-          audio = new Audio(currentQuestion.speakingAudioUrl);
-        } else {
-          // Generate synthetic audio for testing
-          const duration = currentQuestion.speakingDuration || 8;
-          audio = await generateSyntheticAudio(duration);
-        }
-        
-        // When audio ends: reveal question text, then start recording
-        audio.onended = () => {
-          // Reveal question text
+        const onSpeechComplete = () => {
           setQuestionTextRevealed(prev => ({ ...prev, [currentQuestion._id]: true }));
-          
-          // Auto-start recording when audio finishes
           if (!recording[currentQuestion._id] && !speakingDone[currentQuestion._id]) {
             onStartRecording(currentQuestion._id);
           }
         };
 
-        // Play the audio
-        audio.play().catch((err) => console.error("Failed to auto-play examiner audio:", err));
+        try {
+          if ("speechSynthesis" in window) {
+            window.speechSynthesis.cancel();
+          }
+          if (currentQuestion.speakingAudioUrl) {
+            const audio = new Audio(currentQuestion.speakingAudioUrl);
+            audio.onended = onSpeechComplete;
+            await audio.play();
+          } else {
+            const promptText = currentQuestion.speakingPrompt || currentQuestion.questionText;
+            if (!promptText) throw new Error("No prompt text for speech");
+            await speakPrompt(promptText);
+            onSpeechComplete();
+          }
+        } catch (err) {
+          console.error("Failed to auto-play examiner audio:", err);
+          // Fallback: show question and start recording after short delay
+          setQuestionTextRevealed(prev => ({ ...prev, [currentQuestion._id]: true }));
+          setTimeout(() => {
+            if (!recording[currentQuestion._id] && !speakingDone[currentQuestion._id]) {
+              onStartRecording(currentQuestion._id);
+            }
+          }, 500);
+        }
 
-        // Mark as auto-played
         setAutoPlayStarted(prev => ({ ...prev, [currentQuestion._id]: true }));
+        autoPlayInFlightRef.current[currentQuestion._id] = false;
       })();
     } else if (currentPart?.partNumber === 2 && !recording[currentQuestion._id]) {
       // For Part 2 (cue card), show text immediately and auto-start recording after 1 second
@@ -283,6 +259,7 @@ export default function SpeakingSequentialView({
           onStartRecording(currentQuestion._id);
           setAutoPlayStarted(prev => ({ ...prev, [currentQuestion._id]: true }));
         }
+        autoPlayInFlightRef.current[currentQuestion._id] = false;
       }, 1000);
       return () => clearTimeout(timer);
     }
@@ -360,12 +337,11 @@ export default function SpeakingSequentialView({
             <span>Progress</span>
             <span>{questionsCompletedBefore + (isSpeakingDone ? 1 : 0)} of {totalQuestions}</span>
           </div>
-          <div className="h-2 w-full bg-[#d4cfc4] rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-[#c9a227] transition-all duration-300"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
+          <progress
+            value={Math.min(100, Math.max(0, progressPercent))}
+            max={100}
+            className="w-full h-2 rounded-full overflow-hidden appearance-none bg-[#d4cfc4] [&::-webkit-progress-bar]:bg-[#d4cfc4] [&::-webkit-progress-value]:bg-[#c9a227] [&::-moz-progress-bar]:bg-[#c9a227]"
+          />
         </div>
 
         {/* Part & Question header */}
@@ -478,7 +454,7 @@ export default function SpeakingSequentialView({
               </div>
 
               {/* Playback of already recorded audio */}
-              {answers[currentQuestion._id] && (
+              {answers[currentQuestion._id] && String(answers[currentQuestion._id]).startsWith("http") && (
                 <div className="border border-slate-200 bg-white rounded-xl p-4 space-y-2">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Your Recording</p>
                   <audio

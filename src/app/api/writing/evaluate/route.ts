@@ -14,6 +14,7 @@ import {
   formatWritingFeedback,
   uniqueSuggestions,
 } from "@/lib/writingEvaluation";
+import { useFeature as consumeFeature } from "@/lib/accessControl";
 import { requestLogger } from "@/lib/logger";
 import { captureException } from "@/lib/sentryServer";
 
@@ -71,7 +72,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "Writing question not found" }, { status: 404 });
     }
 
-    const upserted = await Answer.findOneAndUpdate(
+    const existingAnswer = await Answer.findOne({
+      attemptId,
+      questionId: (question as any)._id,
+      userId: session.user.id,
+      "writingEvaluation.overallBand": { $exists: true },
+    }).lean();
+
+    if (existingAnswer?.writingEvaluation) {
+      const evaluation = existingAnswer.writingEvaluation as any;
+      return withCacheHeaders(
+        NextResponse.json({
+          criteria: {
+            taskAchievement: evaluation.taskAchievement,
+            coherenceCohesion: evaluation.coherenceCohesion,
+            lexicalResource: evaluation.lexicalResource,
+            grammaticalRange: evaluation.grammaticalRange,
+          },
+          overallBand: evaluation.overallBand,
+          feedback: evaluation.feedback,
+          suggestions: evaluation.suggestions ?? [],
+        }),
+        { kind: "no-store" }
+      );
+    }
+
+  await consumeFeature(session.user.id, "writingCorrection");
+
+  const upserted = await Answer.findOneAndUpdate(
       { attemptId, questionId: (question as any)._id },
       {
         $set: {
