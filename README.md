@@ -18,6 +18,16 @@ IELTS Practice Pro is a comprehensive online platform designed to help students 
 - **Progress Tracking** - Detailed analytics and performance monitoring
 - **24/7 Access** - Learn at your own pace, anytime, anywhere
 
+## 🎤 Speaking Admin Configuration
+
+The admin dashboard now includes speaking-specific tooling for creating IELTS-compliant questions:
+
+- **Part-wise instruction templates** for Part 1/2/3 groups
+- **Speaking question builder** with prompt, duration presets, and marking guide
+- **Cue card template builder** for Part 2
+- **Speaking section audio reference upload**
+- **Client-side speaking parity checks** before publishing
+
 ## �� Getting Started
 
 ### Prerequisites

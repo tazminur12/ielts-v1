@@ -10,6 +10,48 @@ import {
 import { effectiveTestDurationMinutes } from "@/lib/testDuration";
 import QuestionNavPanel from "@/components/exam/QuestionNavPanel";
 import { AudioPlayer } from "@/components/exam/AudioPlayer";
+import SpeakingSequentialView from "@/components/exam/SpeakingSequentialView";
+import type {
+  LiveMetricsSnapshot,
+  FollowUpQuestion,
+  PronunciationAnalysisResult,
+  HesitationReport,
+} from "@/lib/speakingEnhancementComplete";
+import {
+  saveAudioBackup,
+  deleteBackup,
+  retryPendingBackups,
+} from "@/lib/speakingBackup";
+
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxAttempts: number = 3,
+  baseDelayMs: number = 2000,
+  onRetry?: (attempt: number) => void
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === maxAttempts) throw err;
+      if (onRetry) onRetry(attempt + 1);
+      const delay = baseDelayMs * Math.pow(2, attempt - 1);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error("All retry attempts failed");
+}
+
+// Helper to convert Uint8Array to base64 without stack overflow
+function uint8ArrayToBase64(uint8Array: Uint8Array): string {
+  const chunkSize = 8192;
+  let result = '';
+  for (let i = 0; i < uint8Array.length; i += chunkSize) {
+    const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+    result += String.fromCharCode(...Array.from(chunk));
+  }
+  return btoa(result);
+}
 
 // ─── Types (aligned with backend enums) ──────────────────────────────────────
 
@@ -243,19 +285,42 @@ function TakeExamContent() {
   const [recordingEndsAt, setRecordingEndsAt] = useState<Record<string, number>>({});
   const [speakingDone, setSpeakingDone] = useState<Record<string, boolean>>({});
   const [liveTurns, setLiveTurns] = useState<Record<string, { userText: string; aiText: string; aiAudioUrl: string | null }>>({});
+  const [speakingAnalysis, setSpeakingAnalysis] = useState<Record<string, {
+    pronunciation?: PronunciationAnalysisResult;
+    hesitation?: HesitationReport;
+    followUps?: FollowUpQuestion[];
+  }>>({});
+  const [speakingLiveMetrics, setSpeakingLiveMetrics] = useState<Record<string, LiveMetricsSnapshot | null>>({});
   const [aiSpeaking, setAiSpeaking] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<Record<string, 
+    'idle' | 'uploading' | 'retrying' | 'failed' | 'saved'>>({});
+  const [retryAttempt, setRetryAttempt] = useState<Record<string, number>>({});
   const aiSpeakingRef = useRef(false);
   const aiAudioRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<Record<string, MediaRecorder>>({});
   const audioChunksRef = useRef<Record<string, Blob[]>>({});
   const recordingTimeoutRef = useRef<Record<string, number>>({});
+  const recordingStartedAtRef = useRef<Record<string, number>>({});
+  const liveMetricsIntervalRef = useRef<Record<string, number>>({});
+  const liveMetricsBusyRef = useRef<Record<string, boolean>>({});
   const activeRecordingQIdRef = useRef<string | null>(null);
   const saveInFlight = useRef<Set<string>>(new Set());
+  const backupRetryInProgressRef = useRef(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   // timerActive: true only after test loads with a non-zero duration
   const [timerActive, setTimerActive] = useState(false);
   // Ref keeps handleSubmit fresh so the auto-submit effect never uses stale closure
   const handleSubmitRef = useRef<(auto?: boolean) => Promise<void>>(async () => {});
+  // Ref to store stopRecording so cleanup and visibility handlers can access it without recreating effects
+  const stopRecordingRef = useRef<(qId: string) => void>(() => {});
+  // Ref to store handleQuestionSelect so uploadSpeaking can use the latest version without dependency
+  const handleQuestionSelectRef = useRef<(qNum: number) => void>(() => {});
+  // Refs to track uploadAudioToServer dependencies for retry callbacks
+  const speakingMetaByIdRef = useRef<Record<string, { part: 1 | 2 | 3; maxSeconds: number; prepSeconds: number }>>({});
+  const displayNumberByIdRef = useRef<Map<string, number>>(new Map());
+  const moduleQuestionsRef = useRef<any[]>([]);
+  const questionTextByIdRef = useRef<Map<string, string>>(new Map());
+  const isLiveInterviewRef = useRef(false);
 
   const isSpeakingSection = useMemo(
     () => test?.sections?.[activeSectionIdx]?.sectionType === "speaking_part",
@@ -274,6 +339,19 @@ function TakeExamContent() {
       for (const grp of sec.groups ?? []) {
         for (const q of grp.questions ?? []) {
           if (q?._id) map.set(String(q._id), Number(q.questionNumber));
+        }
+      }
+    }
+    return map;
+  }, [test]);
+
+  const questionTextById = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!test) return map;
+    for (const sec of test.sections ?? []) {
+      for (const grp of sec.groups ?? []) {
+        for (const q of grp.questions ?? []) {
+          if (q?._id) map.set(String(q._id), q.questionText || q.speakingPrompt || "");
         }
       }
     }
@@ -407,13 +485,151 @@ function TakeExamContent() {
             setAnswers(map);
           }
         }
+
+        // Retry pending backups on page load
+        if (!backupRetryInProgressRef.current) {
+          backupRetryInProgressRef.current = true;
+          try {
+            await retryPendingBackups(async (qId, aId, blob) => {
+              setUploadStatus(prev => ({ ...prev, [qId]: 'uploading' }));
+              setRetryAttempt(prev => ({ ...prev, [qId]: 1 }));
+              await retryWithBackoff(
+                async () => await uploadAudioToServerViaRefs(qId, aId, blob),
+                3,
+                2000,
+                (attempt) => {
+                  setUploadStatus(prev => ({ ...prev, [qId]: 'retrying' }));
+                  setRetryAttempt(prev => ({ ...prev, [qId]: attempt }));
+                }
+              );
+              setUploadStatus(prev => ({ ...prev, [qId]: 'saved' }));
+              setSpeakingDone(prev => ({ ...prev, [qId]: true }));
+            });
+          } finally {
+            backupRetryInProgressRef.current = false;
+          }
+        }
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Unknown error");
       } finally {
         setLoading(false);
       }
     })();
-  }, [router, testId]);
+  }, [router, testId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-retry on reconnect
+  useEffect(() => {
+    const handleOnline = async () => {
+      if (!attemptId || backupRetryInProgressRef.current) return;
+      backupRetryInProgressRef.current = true;
+      try {
+        await retryPendingBackups(async (qId, aId, blob) => {
+          setUploadStatus(prev => ({ ...prev, [qId]: 'uploading' }));
+          setRetryAttempt(prev => ({ ...prev, [qId]: 1 }));
+          await retryWithBackoff(
+            async () => await uploadAudioToServerViaRefs(qId, aId, blob),
+            3,
+            2000,
+            (attempt) => {
+              setUploadStatus(prev => ({ ...prev, [qId]: 'retrying' }));
+              setRetryAttempt(prev => ({ ...prev, [qId]: attempt }));
+            }
+          );
+          setUploadStatus(prev => ({ ...prev, [qId]: 'saved' }));
+          setSpeakingDone(prev => ({ ...prev, [qId]: true }));
+        });
+      } finally {
+        backupRetryInProgressRef.current = false;
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [attemptId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Enhanced beforeunload handler to stop recordings
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const activeQIds = Object.entries(recording)
+        .filter(([, isRec]) => isRec)
+        .map(([qId]) => qId);
+
+      if (activeQIds.length > 0 || submitting) {
+        e.preventDefault();
+        e.returnValue = 'Your exam recording is in progress. Leaving now will lose your recording. Are you sure?';
+
+        activeQIds.forEach(qId => {
+          const mr = mediaRecorderRef.current[qId];
+          if (mr && mr.state !== 'inactive') {
+            mr.stop();
+          }
+        });
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [recording, submitting]);
+
+  // Page Visibility API — handle mobile background
+  useEffect(() => {
+    let backgroundTimeout: NodeJS.Timeout | null = null;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        const activeQIds = Object.entries(recording)
+          .filter(([, isRec]) => isRec)
+          .map(([qId]) => qId);
+
+        if (activeQIds.length > 0) {
+          backgroundTimeout = setTimeout(() => {
+            activeQIds.forEach(qId => stopRecordingRef.current(qId));
+          }, 30000);
+        }
+      } else {
+        if (backgroundTimeout) {
+          clearTimeout(backgroundTimeout);
+          backgroundTimeout = null;
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (backgroundTimeout) clearTimeout(backgroundTimeout);
+    };
+  }, [recording]);
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    const mediaRecorders = mediaRecorderRef.current;
+    const recordingTimeouts = recordingTimeoutRef.current;
+    const liveMetricsIntervals = liveMetricsIntervalRef.current;
+
+    return () => {
+      Object.keys(mediaRecorders).forEach(qId => {
+        const mr = mediaRecorders[qId];
+        if (mr && mr.state !== 'inactive') {
+          mr.stop();
+        }
+      });
+
+      Object.values(recordingTimeouts).forEach(t => window.clearTimeout(t));
+      Object.values(liveMetricsIntervals).forEach(id => window.clearInterval(id));
+    };
+  }, []);
+
+  // Recording indicator in browser tab title
+  useEffect(() => {
+    const isRec = Object.values(recording).some(Boolean);
+    const originalTitle = document.title;
+    if (isRec) {
+      document.title = '🔴 Recording in progress — Do not close';
+    }
+    return () => {
+      document.title = originalTitle;
+    };
+  }, [recording]);
 
   useEffect(() => {
     if (!attemptId || !attemptSessionId || !timerActive) return;
@@ -503,6 +719,50 @@ function TakeExamContent() {
     saveAnswer(questionId, text, "essay");
   };
 
+  const startLiveMetrics = useCallback(
+    (questionId: string) => {
+      if (liveMetricsIntervalRef.current[questionId]) return;
+      liveMetricsIntervalRef.current[questionId] = window.setInterval(async () => {
+        if (liveMetricsBusyRef.current[questionId]) return;
+        const chunks = audioChunksRef.current[questionId];
+        if (!chunks || chunks.length === 0) return;
+        liveMetricsBusyRef.current[questionId] = true;
+        try {
+          const blob = new Blob(chunks, { type: "audio/webm" });
+          const startedAt = recordingStartedAtRef.current[questionId] || Date.now();
+          const duration = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+          
+          const arrayBuffer = await blob.arrayBuffer();
+          const base64 = uint8ArrayToBase64(new Uint8Array(arrayBuffer));
+          
+          const res = await fetch('/api/speaking/live-metrics', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audioBase64: base64, mimeType: blob.type, durationSeconds: duration })
+          });
+          if (!res.ok) throw new Error('Failed to get live metrics');
+          const { metrics } = await res.json();
+          
+          setSpeakingLiveMetrics((prev) => ({ ...prev, [questionId]: metrics }));
+        } catch {
+          // ignore live metrics errors
+        } finally {
+          liveMetricsBusyRef.current[questionId] = false;
+        }
+      }, 4000);
+    },
+    []
+  );
+
+  const stopLiveMetrics = useCallback((questionId: string) => {
+    const id = liveMetricsIntervalRef.current[questionId];
+    if (id) {
+      window.clearInterval(id);
+      delete liveMetricsIntervalRef.current[questionId];
+    }
+    liveMetricsBusyRef.current[questionId] = false;
+  }, []);
+
   // ── Speaking ───────────────────────────────────────────────────────────────
   const startRecording = async (questionId: string) => {
     try {
@@ -550,6 +810,7 @@ function TakeExamContent() {
           window.clearTimeout(t);
           delete recordingTimeoutRef.current[questionId];
         }
+        stopLiveMetrics(questionId);
         setRecordingEndsAt((prev) => {
           const next = { ...prev };
           delete next[questionId];
@@ -560,6 +821,8 @@ function TakeExamContent() {
       };
       mr.start();
       mediaRecorderRef.current[questionId] = mr;
+      recordingStartedAtRef.current[questionId] = Date.now();
+      startLiveMetrics(questionId);
       setRecording((prev) => ({ ...prev, [questionId]: true }));
       activeRecordingQIdRef.current = questionId;
 
@@ -574,12 +837,13 @@ function TakeExamContent() {
     }
   };
 
-  const stopRecording = (questionId: string) => {
+  const stopRecording = useCallback((questionId: string) => {
     const t = recordingTimeoutRef.current[questionId];
     if (t) {
       window.clearTimeout(t);
       delete recordingTimeoutRef.current[questionId];
     }
+    stopLiveMetrics(questionId);
     setRecordingEndsAt((prev) => {
       const next = { ...prev };
       delete next[questionId];
@@ -591,88 +855,12 @@ function TakeExamContent() {
       mr.stop();
     }
     setRecording((prev) => ({ ...prev, [questionId]: false }));
-  };
+  }, [stopLiveMetrics]);
 
-  const uploadSpeaking = async (questionId: string, stream: MediaStream) => {
-    stream.getTracks().forEach((t) => t.stop());
-    if (!attemptId) return;
-    const meta = speakingMetaById[questionId];
-    const partNumber = meta?.part ?? 1;
-    const blob = new Blob(audioChunksRef.current[questionId], { type: "audio/webm" });
-    const fd = new FormData();
-    fd.append("attemptId", attemptId);
-    fd.append("partNumber", String(partNumber));
-    fd.append("questionId", questionId);
-    fd.append("audio", blob, "speaking.webm");
-    try {
-      if (isLiveInterview) {
-        const currentDisplay = displayNumberById.get(String(questionId)) || 0;
-        const idx = moduleQuestions.findIndex((q) => (displayNumberById.get(String(q._id)) || 0) === currentDisplay);
-        const nextQ = idx >= 0 ? moduleQuestions[idx + 1] : null;
-        const nextPrompt = nextQ ? String(nextQ.questionText || "").trim() : "";
-        if (nextPrompt) fd.append("nextPrompt", nextPrompt);
-
-        setAiSpeaking(true);
-        aiSpeakingRef.current = true;
-        if (aiAudioRef.current) {
-          aiAudioRef.current.pause();
-          aiAudioRef.current.src = "";
-          aiAudioRef.current = null;
-        }
-
-        const res = await fetch("/api/ai/speaking-interview-turn", { method: "POST", body: fd });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.message || "Live interview failed");
-
-        setLiveTurns((prev) => ({
-          ...prev,
-          [questionId]: {
-            userText: String(data?.transcribedText || "").trim(),
-            aiText: String(data?.aiText || "").trim(),
-            aiAudioUrl: data?.aiAudioUrl || null,
-          },
-        }));
-
-        if (data?.aiAudioUrl) {
-          const audio = new Audio(String(data.aiAudioUrl));
-          aiAudioRef.current = audio;
-          audio.onended = () => {
-            setAiSpeaking(false);
-            aiSpeakingRef.current = false;
-            aiAudioRef.current = null;
-            if (nextQ) {
-              const n = displayNumberById.get(String(nextQ._id));
-              if (n) handleQuestionSelect(n);
-            }
-          };
-          audio.onerror = () => {
-            setAiSpeaking(false);
-            aiSpeakingRef.current = false;
-            aiAudioRef.current = null;
-          };
-          await audio.play().catch(() => {
-            setAiSpeaking(false);
-            aiSpeakingRef.current = false;
-            aiAudioRef.current = null;
-          });
-        } else {
-          setAiSpeaking(false);
-          aiSpeakingRef.current = false;
-          if (nextQ) {
-            const n = displayNumberById.get(String(nextQ._id));
-            if (n) handleQuestionSelect(n);
-          }
-        }
-      } else {
-        await fetch("/api/speaking/upload", { method: "POST", body: fd });
-      }
-      setSpeakingDone((prev) => ({ ...prev, [questionId]: true }));
-    } catch {
-      setAiSpeaking(false);
-      aiSpeakingRef.current = false;
-      alert("Failed to upload speaking audio. Please try again.");
-    }
-  };
+  // Update stopRecordingRef so cleanup and visibility handlers can access it
+  useEffect(() => {
+    stopRecordingRef.current = stopRecording;
+  }, [stopRecording]);
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async (autoSubmit = false) => {
@@ -790,6 +978,305 @@ function TakeExamContent() {
       .sort((a, b) => (displayNumberById.get(String(a._id)) || 0) - (displayNumberById.get(String(b._id)) || 0));
   }, [activeModule, displayNumberById, test]);
 
+  const uploadAudioToServer = useCallback(async (questionId: string, attemptId: string, blob: Blob) => {
+    if (!questionId || !attemptId) {
+      throw new Error(`Missing required params: questionId=${questionId}, attemptId=${attemptId}`);
+    }
+    
+    const meta = speakingMetaById[questionId];
+    if (!meta) {
+      console.error('No speaking metadata found for question:', questionId);
+      throw new Error('Question metadata not found');
+    }
+    
+    const fd = new FormData();
+    fd.append("attemptId", attemptId);
+    fd.append("partNumber", String(meta.part));
+    fd.append("questionId", questionId);
+    fd.append("audio", blob, "speaking.webm");
+    
+    if (isLiveInterview) {
+      const currentDisplay = displayNumberById.get(String(questionId)) || 0;
+      const idx = moduleQuestions.findIndex((q) => (displayNumberById.get(String(q._id)) || 0) === currentDisplay);
+      const nextQ = idx >= 0 ? moduleQuestions[idx + 1] : null;
+      const nextPrompt = nextQ ? String(nextQ.questionText || "").trim() : "";
+      if (nextPrompt) fd.append("nextPrompt", nextPrompt);
+    }
+
+    let data: any = {};
+    if (isLiveInterview) {
+      const res = await fetch("/api/ai/speaking-interview-turn", { method: "POST", body: fd });
+      data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error('Speaking interview API error:', res.status, data);
+        throw new Error(data?.message || `Live interview failed (${res.status})`);
+      }
+    } else {
+      const res = await fetch("/api/speaking/upload", { method: "POST", body: fd });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error('Speaking upload API error:', res.status, errData);
+        throw new Error(errData?.message || `Failed to upload speaking audio (${res.status})`);
+      }
+    }
+
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const base64 = uint8ArrayToBase64(new Uint8Array(arrayBuffer));
+      const analyzeRes = await fetch('/api/speaking/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioBase64: base64, mimeType: blob.type, durationSeconds: 0, questionId, attemptId })
+      });
+      if (!analyzeRes.ok) {
+        const analyzeErr = await analyzeRes.json().catch(() => ({}));
+        console.error('Speaking analyze API error:', analyzeRes.status, analyzeErr);
+        throw new Error('Failed to analyze speaking');
+      }
+      const { pronunciation, hesitation } = await analyzeRes.json();
+
+      let followUps: any[] = [];
+      if (isLiveInterview && data?.transcribedText) {
+        const followupsRes = await fetch('/api/speaking/followups', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            transcript: String(data?.transcribedText || "").trim(), 
+            originalQuestion: questionTextById.get(String(questionId)) || "", 
+            partNumber: meta?.part ?? 1, 
+            speakingRate: 120, 
+            hesitationRate: hesitation.ratePerMinute, 
+            fluencyScore: hesitation.fluencyScore, 
+            pronunciationScore: pronunciation.score 
+          })
+        });
+        if (followupsRes.ok) {
+          const followupsData = await followupsRes.json();
+          followUps = followupsData.followUps;
+        }
+      }
+
+      return { data, pronunciation, hesitation, followUps };
+    } catch (analyzeErr) {
+      console.error('Error in post-upload analysis:', analyzeErr);
+      // Don't fail the whole upload if analysis fails - audio was already uploaded
+      return { 
+        data, 
+        pronunciation: { score: 0, details: {} }, 
+        hesitation: { ratePerMinute: 0, fluencyScore: 0, details: {} }, 
+        followUps: [] 
+      };
+    }
+  }, [isLiveInterview, speakingMetaById, displayNumberById, moduleQuestions, questionTextById]);
+
+  // Keep refs in sync with dependencies for retry callbacks
+  useEffect(() => {
+    speakingMetaByIdRef.current = speakingMetaById;
+    displayNumberByIdRef.current = displayNumberById;
+    moduleQuestionsRef.current = moduleQuestions;
+    questionTextByIdRef.current = questionTextById;
+    isLiveInterviewRef.current = isLiveInterview;
+  }, [speakingMetaById, displayNumberById, moduleQuestions, questionTextById, isLiveInterview]);
+
+  // Simplified upload for retry callbacks (uses refs for latest dependencies)
+  const uploadAudioToServerViaRefs = useCallback(async (questionId: string, attemptId: string, blob: Blob) => {
+    if (!questionId || !attemptId) {
+      throw new Error(`Missing required params: questionId=${questionId}, attemptId=${attemptId}`);
+    }
+    
+    const meta = speakingMetaByIdRef.current[questionId];
+    if (!meta) {
+      console.error('No speaking metadata found for question:', questionId);
+      throw new Error('Question metadata not found');
+    }
+    
+    const fd = new FormData();
+    fd.append("attemptId", attemptId);
+    fd.append("partNumber", String(meta.part));
+    fd.append("questionId", questionId);
+    fd.append("audio", blob, "speaking.webm");
+    if (isLiveInterviewRef.current) {
+      const currentDisplay = displayNumberByIdRef.current.get(String(questionId)) || 0;
+      const idx = moduleQuestionsRef.current.findIndex((q) => (displayNumberByIdRef.current.get(String(q._id)) || 0) === currentDisplay);
+      const nextQ = idx >= 0 ? moduleQuestionsRef.current[idx + 1] : null;
+      const nextPrompt = nextQ ? String(nextQ.questionText || "").trim() : "";
+      if (nextPrompt) fd.append("nextPrompt", nextPrompt);
+    }
+
+    let data: any = {};
+    if (isLiveInterviewRef.current) {
+      const res = await fetch("/api/ai/speaking-interview-turn", { method: "POST", body: fd });
+      data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "Live interview failed");
+    } else {
+      const res = await fetch("/api/speaking/upload", { method: "POST", body: fd });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.message || "Failed to upload speaking audio");
+      }
+    }
+
+    const arrayBuffer = await blob.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    
+    // ✅ Make analysis and followups requests in parallel instead of sequential
+    const analyzePromise = fetch('/api/speaking/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audioBase64: base64, mimeType: blob.type, durationSeconds: 0, questionId, attemptId })
+    });
+
+    const followupsPromise = (isLiveInterviewRef.current && data?.transcribedText)
+      ? fetch('/api/speaking/followups', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            transcript: String(data?.transcribedText || "").trim(), 
+            originalQuestion: questionTextByIdRef.current.get(String(questionId)) || "", 
+            partNumber: meta?.part ?? 1, 
+            speakingRate: 120, 
+            hesitationRate: 0,
+            fluencyScore: 0,
+            pronunciationScore: 0
+          })
+        })
+      : Promise.resolve(null as any);
+
+    // Wait for both requests in parallel
+    const [analyzeRes, followupsRes] = await Promise.all([
+      analyzePromise,
+      followupsPromise
+    ]);
+
+    if (!analyzeRes.ok) throw new Error('Failed to analyze speaking');
+    const { pronunciation, hesitation } = await analyzeRes.json();
+
+    let followUps: any[] = [];
+    if (isLiveInterviewRef.current && followupsRes?.ok) {
+      const followupsData = await followupsRes.json();
+      followUps = followupsData.followUps;
+    }
+
+    return { data, pronunciation, hesitation, followUps };
+  }, []);
+
+  const uploadSpeaking = useCallback(async (questionId: string, stream: MediaStream) => {
+    stream.getTracks().forEach((t) => t.stop());
+    if (!attemptId) return;
+    
+    // Prevent duplicate uploads for same question
+    if (uploadStatus[questionId] === 'uploading' || uploadStatus[questionId] === 'retrying') {
+      console.warn('Upload already in progress for question', questionId);
+      return;
+    }
+    
+    const blob = new Blob(audioChunksRef.current[questionId], { type: "audio/webm" });
+    setUploadStatus(prev => ({ ...prev, [questionId]: 'uploading' }));
+    setRetryAttempt(prev => ({ ...prev, [questionId]: 1 }));
+
+    try {
+      // Capture attemptId in local scope to avoid TypeScript non-null assertion
+      const id = attemptId;
+      const result = await retryWithBackoff(
+        async () => await uploadAudioToServer(questionId, id, blob),
+        3,
+        2000,
+        (attempt) => {
+          setUploadStatus(prev => ({ ...prev, [questionId]: 'retrying' }));
+          setRetryAttempt(prev => ({ ...prev, [questionId]: attempt }));
+        }
+      );
+
+      if (isLiveInterview) {
+        setAiSpeaking(true);
+        aiSpeakingRef.current = true;
+        if (aiAudioRef.current) {
+          aiAudioRef.current.pause();
+          aiAudioRef.current.src = "";
+          aiAudioRef.current = null;
+        }
+
+        const transcribedText = String(result.data?.transcribedText || "").trim();
+        setLiveTurns((prev) => ({
+          ...prev,
+          [questionId]: {
+            userText: transcribedText,
+            aiText: String(result.data?.aiText || "").trim(),
+            aiAudioUrl: result.data?.aiAudioUrl || null,
+          },
+        }));
+
+        setAnswers((prev) => ({
+          ...prev,
+          [questionId]: transcribedText || "audio_submitted",
+        }));
+
+        setSpeakingAnalysis((prev) => ({
+          ...prev,
+          [questionId]: { pronunciation: result.pronunciation, hesitation: result.hesitation, followUps: result.followUps },
+        }));
+
+        if (result.data?.aiAudioUrl) {
+          const currentDisplay = displayNumberById.get(String(questionId)) || 0;
+          const idx = moduleQuestions.findIndex((q) => (displayNumberById.get(String(q._id)) || 0) === currentDisplay);
+          const nextQ = idx >= 0 ? moduleQuestions[idx + 1] : null;
+          const audio = new Audio(String(result.data.aiAudioUrl));
+          aiAudioRef.current = audio;
+          audio.onended = () => {
+            setAiSpeaking(false);
+            aiSpeakingRef.current = false;
+            aiAudioRef.current = null;
+            if (nextQ) {
+              const n = displayNumberById.get(String(nextQ._id));
+              if (n) handleQuestionSelectRef.current(n);
+            }
+          };
+          audio.onerror = () => {
+            setAiSpeaking(false);
+            aiSpeakingRef.current = false;
+            aiAudioRef.current = null;
+          };
+          await audio.play().catch(() => {
+            setAiSpeaking(false);
+            aiSpeakingRef.current = false;
+            aiAudioRef.current = null;
+          });
+        } else {
+          setAiSpeaking(false);
+          aiSpeakingRef.current = false;
+          const currentDisplay = displayNumberById.get(String(questionId)) || 0;
+          const idx = moduleQuestions.findIndex((q) => (displayNumberById.get(String(q._id)) || 0) === currentDisplay);
+          const nextQ = idx >= 0 ? moduleQuestions[idx + 1] : null;
+          if (nextQ) {
+            const n = displayNumberById.get(String(nextQ._id));
+            if (n) handleQuestionSelectRef.current(n);
+          }
+        }
+      } else {
+        setAnswers((prev) => ({
+          ...prev,
+          [questionId]: "audio_submitted",
+        }));
+
+        setSpeakingAnalysis((prev) => ({
+          ...prev,
+          [questionId]: { pronunciation: result.pronunciation, hesitation: result.hesitation, followUps: [] },
+        }));
+      }
+
+      setUploadStatus(prev => ({ ...prev, [questionId]: 'saved' }));
+      await deleteBackup(questionId);
+      setSpeakingDone((prev) => ({ ...prev, [questionId]: true }));
+    } catch (err: any) {
+      await saveAudioBackup(questionId, attemptId, blob);
+      setUploadStatus(prev => ({ ...prev, [questionId]: 'failed' }));
+      setAiSpeaking(false);
+      aiSpeakingRef.current = false;
+      alert(err?.message || "Failed to upload speaking audio. Saved locally, will retry later.");
+    }
+  }, [attemptId, isLiveInterview, uploadAudioToServer, displayNumberById, moduleQuestions, uploadStatus]);
+
+
   const answeredCount = useMemo(() => moduleQuestions.filter((q) => answers[q._id]).length, [answers, moduleQuestions]);
   const totalQuestions = moduleQuestions.length;
   const isCriticalTime = timerActive && timeLeft > 0 && timeLeft <= 60;   // last 1 min
@@ -842,6 +1329,11 @@ function TakeExamContent() {
       }
     }
   }, [displayNumberById, moduleQuestions, test]);
+
+  // Update ref so uploadSpeaking can access latest version
+  useEffect(() => {
+    handleQuestionSelectRef.current = handleQuestionSelect;
+  }, [handleQuestionSelect]);
 
   useEffect(() => {
     if (!activeSection) return;
@@ -989,14 +1481,14 @@ function TakeExamContent() {
               onClick={() => setActiveSectionIdx(idx)}
               disabled={isAnyRecording || lockForwardFromSpeaking}
               aria-label={`${sectionLabel(sec.sectionType)}: ${sec.title || `Part ${sec.order}`}`}
-              className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all border-b-2 min-h-[44px] ${
+              className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all border-b-2 min-h-11 ${
                 active
                   ? "text-[#c9a227] border-[#c9a227] bg-[#0c1a2e]"
                   : "text-slate-500 border-transparent hover:text-slate-200 hover:bg-[#0c1a2e]/60"
               } disabled:opacity-35 disabled:cursor-not-allowed`}
             >
               {sectionIcon(sec.sectionType)}
-              <span className="uppercase tracking-[0.08em] max-w-[140px] sm:max-w-none truncate">
+              <span className="uppercase tracking-[0.08em] max-w-35 sm:max-w-none truncate">
                 {sec.title || `Part ${sec.order}`}
               </span>
               <span
@@ -1018,6 +1510,7 @@ function TakeExamContent() {
         {activeSection && (
           <SectionView
             section={activeSection}
+            test={test}
             attemptId={attemptId}
             answers={answers}
             writingTexts={writingTexts}
@@ -1036,21 +1529,37 @@ function TakeExamContent() {
             liveTurns={liveTurns}
             isLiveInterview={isLiveInterview}
             aiSpeaking={aiSpeaking}
+            speakingAnalysis={speakingAnalysis}
+            speakingLiveMetrics={speakingLiveMetrics}
+            uploadStatus={uploadStatus}
+            retryAttempt={retryAttempt}
           />
         )}
       </main>
 
       {/* ── Question Navigation Panel ───────────────────────────────────── */}
-      <QuestionNavPanel
-        totalQuestions={totalQuestions}
-        currentQuestion={currentQuestion}
-        answeredQuestions={answeredQuestionsSet}
-        markedForReview={markedForReview}
-        onQuestionSelect={handleQuestionSelect}
-        onToggleReview={handleToggleReview}
-        onNext={handleNextQuestion}
-        onPrevious={handlePreviousQuestion}
-      />
+      {(() => {
+        const currentQ = moduleQuestions.find(
+          (q) => (displayNumberById.get(String(q._id)) || 0) === currentQuestion
+        );
+        const isSpeaking = currentQ?.questionType === "speaking";
+        const isCurrentSpeakingDone = currentQ ? speakingDone[currentQ._id] ?? false : true;
+
+        return (
+          <QuestionNavPanel
+            totalQuestions={totalQuestions}
+            currentQuestion={currentQuestion}
+            answeredQuestions={answeredQuestionsSet}
+            markedForReview={markedForReview}
+            onQuestionSelect={handleQuestionSelect}
+            onToggleReview={handleToggleReview}
+            onNext={handleNextQuestion}
+            onPrevious={handlePreviousQuestion}
+            isCurrentQuestionSpeaking={isSpeaking}
+            speakingDone={isCurrentSpeakingDone}
+          />
+        );
+      })()}
 
       {/* ── Section navigation (footer) ─────────────────────────────────── */}
       <footer className="bg-[#faf9f6] border-t border-slate-200 px-3 sm:px-5 py-2 flex items-center justify-between gap-2 shrink-0">
@@ -1157,7 +1666,7 @@ function TakeExamContent() {
 
       {submitting && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+          className="fixed inset-0 z-100 flex items-center justify-center p-6"
           role="alertdialog"
           aria-busy="true"
           aria-live="polite"
@@ -1216,6 +1725,7 @@ function TakeExamContent() {
 
 function SectionView({
   section,
+  test,
   attemptId,
   answers,
   writingTexts,
@@ -1234,8 +1744,13 @@ function SectionView({
   displayNumberById,
   isLiveInterview,
   aiSpeaking,
+  speakingAnalysis,
+  speakingLiveMetrics,
+  uploadStatus,
+  retryAttempt,
 }: {
   section: Section;
+  test: TestData | null;
   attemptId: string | null;
   answers: AnswerMap;
   writingTexts: Record<string, string>;
@@ -1254,6 +1769,14 @@ function SectionView({
   displayNumberById: Map<string, number>;
   isLiveInterview: boolean;
   aiSpeaking: boolean;
+  speakingAnalysis: Record<string, {
+    pronunciation?: PronunciationAnalysisResult;
+    hesitation?: HesitationReport;
+    followUps?: FollowUpQuestion[];
+  }>;
+  speakingLiveMetrics: Record<string, LiveMetricsSnapshot | null>;
+  uploadStatus: Record<string, 'idle' | 'uploading' | 'retrying' | 'failed' | 'saved'>;
+  retryAttempt: Record<string, number>;
 }) {
   const isReading = section.sectionType === "reading_passage";
   const isListening = section.sectionType === "listening_part";
@@ -1292,8 +1815,12 @@ function SectionView({
           displayNumberById={displayNumberById}
           isLiveInterview={isLiveInterview}
           aiSpeaking={aiSpeaking}
+          speakingAnalysis={speakingAnalysis}
+          speakingLiveMetrics={speakingLiveMetrics}
           forceSpeaking={isSpeaking}
           isReadingSection={isReading}
+          uploadStatus={uploadStatus}
+          retryAttempt={retryAttempt}
         />
       ))}
     </div>
@@ -1418,6 +1945,29 @@ function SectionView({
 
   /* ── Speaking ────────────────────────────────────────────────────────── */
   if (isSpeaking) {
+    const speakingSections = test?.sections.filter(s => s.sectionType === "speaking_part") || [];
+    if (attemptId) {
+      return (
+        <SpeakingSequentialView
+          sections={speakingSections}
+          attemptId={attemptId}
+          answers={answers}
+          recording={recording}
+          recordingEndsAt={recordingEndsAt}
+          speakingDone={speakingDone}
+          onStartRecording={onStartRecording}
+          onStopRecording={onStopRecording}
+          speakingMetaById={speakingMetaById}
+          isLiveInterview={isLiveInterview}
+          aiSpeaking={aiSpeaking}
+          liveTurns={liveTurns}
+          speakingAnalysis={speakingAnalysis}
+          speakingLiveMetrics={speakingLiveMetrics}
+          uploadStatus={uploadStatus}
+          retryAttempt={retryAttempt}
+        />
+      );
+    }
     return (
       <div className="h-full overflow-y-auto bg-[#e8e4dc]">
         <div className="max-w-3xl mx-auto p-5 space-y-5">
@@ -1472,8 +2022,12 @@ function QuestionGroupView({
   displayNumberById,
   isLiveInterview,
   aiSpeaking,
+  speakingAnalysis,
+  speakingLiveMetrics,
   forceSpeaking,
   isReadingSection,
+  uploadStatus,
+  retryAttempt,
 }: {
   group: QuestionGroup;
   attemptId: string | null;
@@ -1494,8 +2048,16 @@ function QuestionGroupView({
   displayNumberById: Map<string, number>;
   isLiveInterview: boolean;
   aiSpeaking: boolean;
+  speakingAnalysis: Record<string, {
+    pronunciation?: PronunciationAnalysisResult;
+    hesitation?: HesitationReport;
+    followUps?: FollowUpQuestion[];
+  }>;
+  speakingLiveMetrics: Record<string, LiveMetricsSnapshot | null>;
   forceSpeaking: boolean;
   isReadingSection: boolean;
+  uploadStatus: Record<string, 'idle' | 'uploading' | 'retrying' | 'failed' | 'saved'>;
+  retryAttempt: Record<string, number>;
 }) {
   const groupNumbers = group.questions
     .map((q) => displayNumberById.get(String(q._id)) || 0)
@@ -1583,6 +2145,10 @@ function QuestionGroupView({
               isAnyRecording={isAnyRecording}
               isLiveInterview={isLiveInterview}
               aiSpeaking={aiSpeaking}
+              speakingAnalysis={speakingAnalysis[q._id] ?? null}
+              liveMetrics={speakingLiveMetrics[q._id] ?? null}
+              uploadStatus={uploadStatus[q._id] ?? 'idle'}
+              retryAttempt={retryAttempt[q._id] ?? 0}
             />
           ))}
         </div>
@@ -1616,6 +2182,10 @@ function QuestionView({
   isAnyRecording,
   isLiveInterview,
   aiSpeaking,
+  speakingAnalysis,
+  liveMetrics,
+  uploadStatus,
+  retryAttempt,
 }: {
   question: Question;
   displayNumber: number;
@@ -1639,6 +2209,14 @@ function QuestionView({
   isAnyRecording: boolean;
   isLiveInterview: boolean;
   aiSpeaking: boolean;
+  speakingAnalysis: {
+    pronunciation?: PronunciationAnalysisResult;
+    hesitation?: HesitationReport;
+    followUps?: FollowUpQuestion[];
+  } | null;
+  liveMetrics: LiveMetricsSnapshot | null;
+  uploadStatus: 'idle' | 'uploading' | 'retrying' | 'failed' | 'saved';
+  retryAttempt: number;
 }) {
   const qId = question._id;
   const qType = forceSpeaking ? "speaking" : question.questionType;
@@ -1656,6 +2234,7 @@ function QuestionView({
   const effectiveMatchingOptions = matchingOptions ?? question.matchingOptions ?? [];
 
   const [now, setNow] = useState(() => Date.now());
+  const [prepNotes, setPrepNotes] = useState('');
 
   const prepEndAt = useMemo(() => {
     if (qType !== "speaking") return null;
@@ -1885,7 +2464,7 @@ function QuestionView({
                 aria-label="Select match"
                 value={answer}
                 onChange={(e) => onAnswer(qId, e.target.value, qType)}
-                className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#0c1a2e] focus:border-[#0c1a2e] focus:outline-none bg-white appearance-none cursor-pointer min-w-[180px]"
+                className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#0c1a2e] focus:border-[#0c1a2e] focus:outline-none bg-white appearance-none cursor-pointer min-w-45"
               >
                 <option value="">— Select answer —</option>
                 {effectiveMatchingOptions.map((opt, i) => (
@@ -1954,6 +2533,31 @@ function QuestionView({
                 </div>
               )}
 
+              {uploadStatus !== 'idle' && !speakingDone && (
+                <div className="space-y-2">
+                  {uploadStatus === 'uploading' && (
+                    <div className="flex items-center gap-2 text-blue-600 text-sm font-semibold bg-blue-50 border border-blue-200 px-4 py-3 rounded-xl">
+                      <Loader2 size={16} className="animate-spin" /> Uploading...
+                    </div>
+                  )}
+                  {uploadStatus === 'retrying' && (
+                    <div className="flex items-center gap-2 text-amber-600 text-sm font-semibold bg-amber-50 border border-amber-200 px-4 py-3 rounded-xl">
+                      <AlertCircle size={16} /> Retrying ({retryAttempt}/3)...
+                    </div>
+                  )}
+                  {uploadStatus === 'failed' && (
+                    <div className="flex items-center gap-2 text-red-600 text-sm font-semibold bg-red-50 border border-red-200 px-4 py-3 rounded-xl">
+                      <AlertCircle size={16} /> Upload failed. Saved locally. Will retry when connection restores.
+                    </div>
+                  )}
+                  {uploadStatus === 'saved' && (
+                    <div className="flex items-center gap-2 text-emerald-600 text-sm font-semibold bg-emerald-50 border border-emerald-200 px-4 py-3 rounded-xl">
+                      <CheckCircle size={16} /> Recording submitted
+                    </div>
+                  )}
+                </div>
+              )}
+
               {speakingDone ? (
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-emerald-600 text-sm font-semibold bg-emerald-50 border border-emerald-200 px-4 py-3 rounded-xl">
@@ -1989,10 +2593,54 @@ function QuestionView({
                   )}
                 </div>
               ) : prepRemaining > 0 ? (
-                <div className="bg-amber-50 border border-amber-200 px-4 py-3 rounded-xl">
-                  <p className="text-xs font-extrabold text-amber-900 uppercase tracking-wider">Preparation time</p>
-                  <p className="mt-1 text-sm font-bold text-amber-900 tabular-nums">{prepRemaining}s</p>
-                  <p className="text-xs text-amber-800 mt-1">Recording will unlock when preparation ends.</p>
+                <div className="space-y-3">
+                  <div className="bg-amber-50 border border-amber-200 px-4 py-3 rounded-xl flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-extrabold text-amber-900 uppercase tracking-wider">
+                        Preparation time
+                      </p>
+                      <p className="mt-1 text-2xl font-black text-amber-900 tabular-nums">
+                        {prepRemaining}s
+                      </p>
+                      <p className="text-xs text-amber-800 mt-1">
+                        Recording will unlock when preparation ends.
+                      </p>
+                    </div>
+                    <div className="w-16 h-16">
+                      {/* Simple circular countdown visual */}
+                      <svg viewBox="0 0 36 36" className="-rotate-90">
+                        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#fde68a" strokeWidth="3" />
+                        <circle
+                          cx="18"
+                          cy="18"
+                          r="15.9"
+                          fill="none"
+                          stroke="#d97706"
+                          strokeWidth="3"
+                          strokeDasharray={`${(prepRemaining / (speakingMeta?.prepSeconds ?? 60)) * 100} 100`}
+                        />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Notes area — only for Part 2 */}
+                  {speakingMeta?.part === 2 && (
+                    <div className="border border-[#d4cfc4] bg-white rounded-xl p-4">
+                      <p className="text-[10px] font-bold text-[#0c1a2e] uppercase tracking-wider mb-2">
+                        📝 Your notes (not submitted)
+                      </p>
+                      <textarea
+                        rows={5}
+                        placeholder="Jot down your ideas here. These notes are only for you and will not be saved..."
+                        value={prepNotes}
+                        onChange={(e) => setPrepNotes(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400 focus:outline-none resize-none text-slate-700"
+                      />
+                      <p className="text-xs text-slate-400 mt-1">
+                        Notes are temporary and will disappear after preparation ends.
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : isRecording ? (
                 <div className="flex items-center gap-4 bg-red-50 border border-red-200 px-4 py-3 rounded-xl">
@@ -2022,6 +2670,49 @@ function QuestionView({
                     {speakingLockedByOtherRecording ? " Another recording is in progress." : ""}
                     {speakingLockedByAi ? " Please wait for the examiner." : ""}
                   </p>
+                </div>
+              )}
+              {liveMetrics && (
+                <div className="border border-slate-200 bg-white rounded-xl p-4 space-y-2">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Live metrics</p>
+                  <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
+                    <div>Clarity: <strong>{liveMetrics.currentMetrics.clarity.toFixed(1)}/10</strong></div>
+                    <div>Hesitation: <strong>{Math.round(liveMetrics.currentMetrics.hesitationRate)}/min</strong></div>
+                    <div>Speaking rate: <strong>{Math.round(liveMetrics.currentMetrics.speakingRate)} WPM</strong></div>
+                    <div>Audio quality: <strong>{Math.round(liveMetrics.currentMetrics.audioQuality)}%</strong></div>
+                  </div>
+                  {liveMetrics.warnings.length > 0 && (
+                    <div className="text-xs text-amber-700">
+                      {liveMetrics.warnings.map((w, i) => (
+                        <div key={i}>• {w}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {speakingAnalysis && (speakingAnalysis.pronunciation || speakingAnalysis.hesitation) && (
+                <div className="border border-emerald-200 bg-emerald-50 rounded-xl p-4 space-y-2">
+                  <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Audio analysis</p>
+                  {speakingAnalysis.pronunciation && (
+                    <p className="text-xs text-emerald-900">
+                      Pronunciation: <strong>{speakingAnalysis.pronunciation.score}/9</strong> · Clarity {speakingAnalysis.pronunciation.clarity.toFixed(1)}/10
+                    </p>
+                  )}
+                  {speakingAnalysis.hesitation && (
+                    <p className="text-xs text-emerald-900">
+                      Hesitation: <strong>{speakingAnalysis.hesitation.ratePerMinute.toFixed(1)}/min</strong> · Fluency {speakingAnalysis.hesitation.fluencyScore}/9
+                    </p>
+                  )}
+                </div>
+              )}
+              {speakingAnalysis?.followUps && speakingAnalysis.followUps.length > 0 && (
+                <div className="border border-amber-200 bg-amber-50 rounded-xl p-4 space-y-2">
+                  <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Examiner follow-ups</p>
+                  <ul className="text-xs text-amber-900 list-disc pl-4 space-y-1">
+                    {speakingAnalysis.followUps.map((f) => (
+                      <li key={f.questionId}>{f.question}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </div>
