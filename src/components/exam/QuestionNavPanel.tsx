@@ -11,6 +11,8 @@ interface QuestionNavPanelProps {
   onToggleReview: (qNum: number) => void;
   onNext: () => void;
   onPrevious: () => void;
+  isCurrentQuestionSpeaking?: boolean;
+  speakingDone?: boolean;
 }
 
 export default function QuestionNavPanel({
@@ -22,17 +24,29 @@ export default function QuestionNavPanel({
   onToggleReview,
   onNext,
   onPrevious,
+  isCurrentQuestionSpeaking = false,
+  speakingDone = true,
 }: QuestionNavPanelProps) {
   const questions = Array.from({ length: totalQuestions }, (_, i) => i + 1);
 
-  const getStatusColor = (qNum: number) => {
-    if (markedForReview.has(qNum)) {
-      return "bg-amber-100 border-amber-400 text-amber-800";
+  const getStatusStyle = (qNum: number) => {
+    const isCurrent = qNum === currentQuestion;
+    const isAnswered = answeredQuestions.has(String(qNum));
+    const isMarked = markedForReview.has(qNum);
+
+    let baseStyle = "flex items-center justify-center text-[11px] font-bold rounded-full border-2 transition-colors ";
+    
+    if (isCurrent) {
+      baseStyle += "w-10 h-10 sm:w-11 sm:h-10 ring-2 ring-[#c9a227] ring-offset-2 animate-pulse bg-[#c9a227] text-[#0c1a2e] border-[#c9a227]";
+    } else if (isAnswered) {
+      baseStyle += "w-10 h-10 sm:w-11 sm:h-10 bg-emerald-600 text-white border-emerald-600";
+    } else if (isMarked) {
+      baseStyle += "w-10 h-10 sm:w-11 sm:h-10 bg-amber-100 border-amber-400 text-amber-800";
+    } else {
+      baseStyle += "w-10 h-10 sm:w-11 sm:h-10 bg-white border-slate-300 text-slate-500";
     }
-    if (answeredQuestions.has(String(qNum))) {
-      return "bg-emerald-100 border-emerald-400 text-emerald-800";
-    }
-    return "bg-white border-slate-300 text-slate-700";
+    
+    return baseStyle;
   };
 
   return (
@@ -41,15 +55,15 @@ export default function QuestionNavPanel({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
           <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px]">
             <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded bg-emerald-100 border border-emerald-400" />
+              <div className="w-3 h-3 rounded-full bg-emerald-600 border border-emerald-600" />
               <span className="text-slate-600">Answered</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded bg-amber-100 border border-amber-400" />
+              <div className="w-3 h-3 rounded-full bg-amber-100 border border-amber-400" />
               <span className="text-slate-600">Marked</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded bg-white border border-slate-300" />
+              <div className="w-3 h-3 rounded-full bg-white border border-slate-300" />
               <span className="text-slate-600">Unanswered</span>
             </div>
           </div>
@@ -68,7 +82,8 @@ export default function QuestionNavPanel({
             </span>
             <button
               onClick={onNext}
-              disabled={currentQuestion >= totalQuestions}
+              disabled={currentQuestion >= totalQuestions || (isCurrentQuestionSpeaking && !speakingDone)}
+              title={isCurrentQuestionSpeaking && !speakingDone ? "Complete your recording before moving to the next question" : ""}
               className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors"
             >
               Next
@@ -79,12 +94,11 @@ export default function QuestionNavPanel({
 
         <div className="flex flex-wrap gap-1.5">
           {questions.map((qNum) => {
-            const isCurrent = qNum === currentQuestion;
             return (
               <div key={qNum} className="relative group">
                 <button
                   onClick={() => onQuestionSelect(qNum)}
-                  className={`w-10 h-9 sm:w-11 sm:h-10 flex items-center justify-center text-[11px] font-bold rounded-md border-2 transition-colors ${getStatusColor(qNum)} ${isCurrent ? "ring-2 ring-blue-500 ring-offset-1" : ""}`}
+                  className={getStatusStyle(qNum)}
                 >
                   {qNum}
                 </button>

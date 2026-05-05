@@ -9,6 +9,11 @@ import {
   CheckCircle, FileEdit, FolderPlus, Layers, RefreshCw, Edit2, X, FileUp, Sparkles,
 } from "lucide-react";
 import Swal from "sweetalert2";
+import { SpeakingTestConfigurationPanel } from "@/components/admin/SpeakingTestConfigPanel";
+import {
+  SpeakingQuestionForm,
+  INSTRUCTION_TEMPLATES,
+} from "@/components/admin/SpeakingQuestionForm";
 
 /* ─── Types ───────────────────────────────────────────── */
 interface Test {
@@ -34,6 +39,12 @@ interface Question {
   questionType: string; options?: { label: string; text: string }[];
   correctAnswer?: string; explanation?: string; marks: number;
   order: number; groupId: string; sectionId: string;
+  speakingPrompt?: string;
+  durationSeconds?: number;
+  partNumber?: number;
+  cueCardTemplate?: { topic: string; bulletPoints: string[]; followUpQuestion?: string };
+  markingGuide?: { fluency: string; pronunciation: string; vocabulary: string; grammar: string };
+  sampleAnswer?: string;
 }
 
 /* ─── Helpers ─────────────────────────────────────────── */
@@ -119,6 +130,7 @@ export default function AdminTestDetailPage() {
   const [sections, setSections] = useState<Section[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [showSpeakingConfig, setShowSpeakingConfig] = useState(false);
 
   // per-section data cache { sectionId -> { groups, questions, loaded } }
   const [sectionData, setSectionData] = useState<
@@ -265,6 +277,59 @@ export default function AdminTestDetailPage() {
     if (!sectionData[sectionId]?.loaded) loadSectionData(sectionId);
   };
 
+  const getSpeakingParityErrors = useCallback(async () => {
+    if (test?.module !== "speaking") return [] as string[];
+
+    const speakingSections = sections.filter((s) => s.sectionType === "speaking_part");
+    const errors: string[] = [];
+
+    if (speakingSections.length < 3) {
+      errors.push("Speaking test should have Part 1, Part 2, and Part 3 sections.");
+    }
+
+    const parts = [1, 2, 3];
+    parts.forEach((p) => {
+      if (!speakingSections.some((s) => s.partNumber === p)) {
+        errors.push(`Missing Speaking Part ${p} section.`);
+      }
+    });
+
+    const sectionChecks = await Promise.all(
+      speakingSections.map(async (section) => {
+        try {
+          const [grpRes, qRes] = await Promise.all([
+            fetch(`/api/admin/question-groups?sectionId=${section._id}`),
+            fetch(`/api/admin/questions?sectionId=${section._id}`),
+          ]);
+          const groups = await grpRes.json();
+          const questions = await qRes.json();
+          return {
+            section,
+            groups: Array.isArray(groups) ? groups : [],
+            questions: Array.isArray(questions) ? questions : [],
+          };
+        } catch {
+          return { section, groups: [], questions: [] };
+        }
+      })
+    );
+
+    sectionChecks.forEach(({ section, groups, questions }) => {
+      const partLabel = section.partNumber ? `Part ${section.partNumber}` : "Unknown Part";
+      if (groups.length === 0) {
+        errors.push(`${partLabel}: Add at least one question group.`);
+      }
+      if (groups.some((g) => g.questionType !== "speaking")) {
+        errors.push(`${partLabel}: All groups should be of type speaking.`);
+      }
+      if (questions.length === 0) {
+        errors.push(`${partLabel}: Add at least one speaking question.`);
+      }
+    });
+
+    return errors;
+  }, [sections, test?.module]);
+
   /* ── publish toggle ─────────────────────────────── */
   const handlePublishToggle = async () => {
     if (!test) return;
@@ -274,6 +339,21 @@ export default function AdminTestDetailPage() {
     }
 
     if (newStatus === "published") {
+      const speakingErrors = await getSpeakingParityErrors();
+      if (speakingErrors.length > 0) {
+        await Swal.fire({
+          title: "Speaking parity issues",
+          html: `<div style="text-align:left">
+            <p style="margin:0 0 8px 0">Fix these before publishing:</p>
+            <ul style="padding-left:18px;margin:0">${speakingErrors
+              .map((e) => `<li>${e}</li>`)
+              .join("")}</ul>
+          </div>`,
+          icon: "error",
+          confirmButtonColor: "#dc2626",
+        });
+        return;
+      }
       try {
         const parityRes = await fetch(`/api/admin/tests/${id}/parity`);
         const parity = await parityRes.json();
@@ -515,6 +595,22 @@ export default function AdminTestDetailPage() {
             <p className="text-xs text-gray-400">Auto-create questions</p>
           </div>
         </button>
+
+        {test?.module === "speaking" && (
+          <button
+            type="button"
+            onClick={() => setShowSpeakingConfig(true)}
+            className="flex flex-col items-center gap-2 p-4 bg-white border-2 border-dashed border-rose-200 rounded-xl hover:border-rose-400 hover:bg-rose-50 transition-colors group"
+          >
+            <div className="w-10 h-10 bg-rose-100 group-hover:bg-rose-200 rounded-xl flex items-center justify-center transition-colors">
+              <Mic size={20} className="text-rose-600"/>
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-gray-800">Speaking Config</p>
+              <p className="text-xs text-gray-400">Part 1, 2, 3 settings</p>
+            </div>
+          </button>
+        )}
       </div>
 
       {/* Sections */}
@@ -609,8 +705,8 @@ export default function AdminTestDetailPage() {
                 {isExpanded && (
                   <div className="border-t border-gray-100 p-4 space-y-5">
 
-                    {/* Listening audio */}
-                    {section.sectionType === "listening_part" && (
+                    {/* Listening / Speaking audio */}
+                    {(section.sectionType === "listening_part" || section.sectionType === "speaking_part") && (
                       <AudioUploader sectionId={section._id} currentUrl={section.audioUrl} onUploaded={fetchTestAndSections}/>
                     )}
 
@@ -783,6 +879,8 @@ export default function AdminTestDetailPage() {
         <AddGroupModal
           testId={id} sectionId={addGroupFor}
           nextOrder={(sectionData[addGroupFor]?.groups.length ?? 0) + 1}
+          sectionPartNumber={sections.find((s) => s._id === addGroupFor)?.partNumber}
+          sectionType={sections.find((s) => s._id === addGroupFor)?.sectionType}
           onClose={() => setAddGroupFor(null)}
           onSuccess={() => { const s = addGroupFor; setAddGroupFor(null); loadSectionData(s); }}
         />
@@ -793,6 +891,8 @@ export default function AdminTestDetailPage() {
           sectionId={addQuestionFor.sectionId}
           groupId={addQuestionFor.groupId}
           nextNumber={(sectionData[addQuestionFor.sectionId]?.questions.length ?? 0) + 1}
+          questionType={sectionData[addQuestionFor.sectionId]?.groups.find((g) => g._id === addQuestionFor.groupId)?.questionType}
+          partNumber={sections.find((s) => s._id === addQuestionFor.sectionId)?.partNumber as 1 | 2 | 3 | undefined}
           onClose={() => setAddQuestionFor(null)}
           onSuccess={() => {
             const s = addQuestionFor.sectionId;
@@ -832,6 +932,12 @@ export default function AdminTestDetailPage() {
             loadSectionData(sectionId);
             fetchTestAndSections();
           }}
+        />
+      )}
+      {showSpeakingConfig && test && (
+        <SpeakingConfigurationModal
+          testId={id}
+          onClose={() => setShowSpeakingConfig(false)}
         />
       )}
     </div>
@@ -1056,22 +1162,45 @@ function EditSectionModal({ section, onClose, onSuccess }: {
 /* ═══════════════════════════════════════════════════════
    ADD QUESTION GROUP MODAL
 ═══════════════════════════════════════════════════════ */
-function AddGroupModal({ testId, sectionId, nextOrder, onClose, onSuccess }: {
-  testId: string; sectionId: string; nextOrder: number;
-  onClose: () => void; onSuccess: () => void;
+function AddGroupModal({
+  testId,
+  sectionId,
+  nextOrder,
+  sectionPartNumber,
+  sectionType,
+  onClose,
+  onSuccess,
+}: {
+  testId: string;
+  sectionId: string;
+  nextOrder: number;
+  sectionPartNumber?: number;
+  sectionType?: string;
+  onClose: () => void;
+  onSuccess: () => void;
 }) {
+  const defaultSpeakingPart =
+    sectionPartNumber && [1, 2, 3].includes(sectionPartNumber)
+      ? (sectionPartNumber as 1 | 2 | 3)
+      : 1;
   const [form, setForm] = useState({
-    title: "", questionType: "multiple_choice", order: nextOrder,
-    questionNumberStart: 1, questionNumberEnd: 5, instructions: "",
+    title: "",
+    questionType: "multiple_choice",
+    order: nextOrder,
+    questionNumberStart: 1,
+    questionNumberEnd: 5,
+    instructions: "",
+    speakingPartTemplate: defaultSpeakingPart,
   });
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true);
     try {
+      const { speakingPartTemplate, ...payload } = form;
       const res = await fetch("/api/admin/question-groups", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, sectionId, testId }),
+        body: JSON.stringify({ ...payload, sectionId, testId }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.message); }
       onSuccess();
@@ -1115,6 +1244,48 @@ function AddGroupModal({ testId, sectionId, nextOrder, onClose, onSuccess }: {
             onChange={(e) => setForm({ ...form, instructions: e.target.value })}
             rows={3} placeholder="Instructions shown above this group of questions…" className={TEXTAREA}/>
         </Field>
+        {form.questionType === "speaking" && sectionType === "speaking_part" && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 space-y-3">
+            <div>
+              <label className="block text-sm font-semibold text-rose-900 mb-2">
+                Speaking Part Instruction Template
+              </label>
+              <select
+                aria-label="Speaking Part Instruction Template"
+                value={form.speakingPartTemplate}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    speakingPartTemplate: Number(e.target.value) as 1 | 2 | 3,
+                  })
+                }
+                className={INPUT}
+              >
+                <option value={1}>Part 1: Introduction</option>
+                <option value={2}>Part 2: Cue Card</option>
+                <option value={3}>Part 3: Discussion</option>
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setForm({
+                  ...form,
+                  instructions:
+                    INSTRUCTION_TEMPLATES[
+                      form.speakingPartTemplate as 1 | 2 | 3
+                    ].instructions,
+                })
+              }
+              className="px-3 py-2 bg-rose-600 text-white rounded-lg text-sm font-medium hover:bg-rose-700"
+            >
+              Apply Template
+            </button>
+            <p className="text-xs text-rose-800">
+              Template: {INSTRUCTION_TEMPLATES[form.speakingPartTemplate as 1 | 2 | 3].title}
+            </p>
+          </div>
+        )}
         <ModalFooter onClose={onClose} saving={saving} label="Create Group"/>
       </form>
     </ModalWrapper>
@@ -1124,16 +1295,56 @@ function AddGroupModal({ testId, sectionId, nextOrder, onClose, onSuccess }: {
 /* ═══════════════════════════════════════════════════════
    ADD QUESTION MODAL
 ═══════════════════════════════════════════════════════ */
-function AddQuestionModal({ testId, sectionId, groupId, nextNumber, onClose, onSuccess }: {
-  testId: string; sectionId: string; groupId: string; nextNumber: number;
-  onClose: () => void; onSuccess: () => void;
+function AddQuestionModal({
+  testId,
+  sectionId,
+  groupId,
+  nextNumber,
+  questionType = "multiple_choice",
+  partNumber,
+  onClose,
+  onSuccess,
+}: {
+  testId: string;
+  sectionId: string;
+  groupId: string;
+  nextNumber: number;
+  questionType?: string;
+  partNumber?: 1 | 2 | 3;
+  onClose: () => void;
+  onSuccess: () => void;
 }) {
   const [form, setForm] = useState({
-    questionNumber: nextNumber, questionText: "", questionType: "multiple_choice",
-    marks: 1, order: nextNumber, correctAnswer: "", explanation: "",
-    optionA: "", optionB: "", optionC: "", optionD: "",
+    questionNumber: nextNumber,
+    questionText: "",
+    questionType: questionType || "multiple_choice",
+    marks: 1,
+    order: nextNumber,
+    correctAnswer: "",
+    explanation: "",
+    optionA: "",
+    optionB: "",
+    optionC: "",
+    optionD: "",
   });
   const [saving, setSaving] = useState(false);
+
+  const isSpeakingType = form.questionType === "speaking" && !!partNumber;
+
+  // If speaking type, render SpeakingQuestionForm instead
+  if (isSpeakingType) {
+    return (
+      <AddSpeakingQuestionModal
+        testId={testId}
+        sectionId={sectionId}
+        groupId={groupId}
+        nextNumber={nextNumber}
+        partNumber={partNumber}
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true);
@@ -1215,6 +1426,75 @@ function AddQuestionModal({ testId, sectionId, groupId, nextNumber, onClose, onS
         </Field>
         <ModalFooter onClose={onClose} saving={saving} label="Add Question"/>
       </form>
+    </ModalWrapper>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   ADD SPEAKING QUESTION MODAL
+═══════════════════════════════════════════════════════ */
+function AddSpeakingQuestionModal({
+  testId,
+  sectionId,
+  groupId,
+  nextNumber,
+  partNumber = 1,
+  onClose,
+  onSuccess,
+}: {
+  testId: string;
+  sectionId: string;
+  groupId: string;
+  nextNumber: number;
+  partNumber?: 1 | 2 | 3;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const handleSubmit = async (question: any) => {
+    try {
+      const res = await fetch("/api/admin/questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          testId,
+          sectionId,
+          groupId,
+          questionNumber: question.questionNumber,
+          questionText: question.questionText,
+          questionType: "speaking",
+          speakingPrompt: question.speakingPrompt,
+          durationSeconds: question.durationSeconds,
+          partNumber: question.partNumber,
+          cueCardTemplate: question.cueCardTemplate,
+          markingGuide: question.markingGuide,
+          sampleAnswer: question.sampleAnswer,
+          marks: 1,
+          order: nextNumber,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Failed to save question");
+      }
+
+      Swal.fire("Success!", "Speaking question added successfully.", "success");
+      onSuccess();
+    } catch (err: any) {
+      Swal.fire("Error", err.message, "error");
+    }
+  };
+
+  return (
+    <ModalWrapper title="🎤 Add Speaking Question" onClose={onClose} wide>
+      <div className="p-6">
+        <SpeakingQuestionForm
+          partNumber={partNumber}
+          questionNumber={nextNumber}
+          onSubmit={handleSubmit}
+          onCancel={onClose}
+        />
+      </div>
     </ModalWrapper>
   );
 }
@@ -1774,6 +2054,25 @@ function AIGenerateModal({
             </div>
           </div>
         )}
+      </div>
+    </ModalWrapper>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   SPEAKING CONFIGURATION MODAL
+═══════════════════════════════════════════════════════ */
+function SpeakingConfigurationModal({
+  testId: _testId,
+  onClose,
+}: {
+  testId: string;
+  onClose: () => void;
+}) {
+  return (
+    <ModalWrapper title="🎤 Speaking Test Configuration" onClose={onClose} wide>
+      <div className="p-6">
+        <SpeakingTestConfigurationPanel />
       </div>
     </ModalWrapper>
   );

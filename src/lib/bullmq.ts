@@ -6,6 +6,8 @@ let cached:
       connection: IORedis;
       autosubmitQueue: Queue;
       aiQueue: Queue;
+      speakingTtsQueue: Queue;
+      speakingAnalysisQueue: Queue;
     }
   | undefined;
 
@@ -39,7 +41,27 @@ export function getBullConnection(): IORedis | null {
     },
   });
 
-  cached = { connection, autosubmitQueue, aiQueue };
+  const speakingTtsQueue = new Queue("speaking:tts", {
+    connection,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: "exponential", delay: 2000 },
+      removeOnComplete: { count: 500 },
+      removeOnFail: { count: 100 },
+    },
+  });
+
+  const speakingAnalysisQueue = new Queue("speaking:analysis", {
+    connection,
+    defaultJobOptions: {
+      attempts: 2,
+      backoff: { type: "exponential", delay: 1000 },
+      removeOnComplete: { count: 500 },
+      removeOnFail: { count: 100 },
+    },
+  });
+
+  cached = { connection, autosubmitQueue, aiQueue, speakingTtsQueue, speakingAnalysisQueue };
   return connection;
 }
 
@@ -55,4 +77,18 @@ export function getAiQueue(): Queue | null {
   const conn = getBullConnection();
   if (!conn) return null;
   return cached!.aiQueue;
+}
+
+export function getSpeakingTtsQueue(): Queue | null {
+  if (cached?.speakingTtsQueue) return cached.speakingTtsQueue;
+  const conn = getBullConnection();
+  if (!conn) return null;
+  return cached!.speakingTtsQueue;
+}
+
+export function getSpeakingAnalysisQueue(): Queue | null {
+  if (cached?.speakingAnalysisQueue) return cached.speakingAnalysisQueue;
+  const conn = getBullConnection();
+  if (!conn) return null;
+  return cached!.speakingAnalysisQueue;
 }

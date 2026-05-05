@@ -11,7 +11,7 @@ import { uploadToS3 } from "@/lib/s3Upload";
 import { transcribeAudio } from "@/lib/aiEvaluation";
 import OpenAI from "openai";
 import { z } from "zod";
-import { synthesizeListeningAudioToS3 } from "@/lib/listeningTts";
+import { getSpeakingTtsQueue } from "@/lib/bullmq";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
           questionId,
           questionNumber: (question as any).questionNumber,
           questionType: (question as any).questionType,
+          questionText: String((question as any).speakingPrompt || (question as any).questionText || "").trim(),
           audioUrl: uploaded.url,
           transcribedText,
           ...(session?.user?.id ? { userId: session.user.id } : { guestId: guestId! }),
@@ -122,14 +123,29 @@ If no next prompt is provided, replyText should politely end this part.`;
     const json = JSON.parse(raw) as { replyText?: string };
     const replyText = String(json.replyText || "").trim() || (nextQ ? `Thank you. ${nextQ}` : "Thank you. This is the end of the speaking test.");
 
-    const tts = await synthesizeListeningAudioToS3(replyText, `speak-ai-${attemptId}-${questionId}`); 
+    // ✅ QUEUE TTS for background processing instead of awaiting
+    // This allows response to return immediately without waiting for audio generation
+    const ttsQueue = getSpeakingTtsQueue();
+    if (ttsQueue) {
+      await ttsQueue.add('generate-tts', {
+        text: replyText,
+        attemptId,
+        questionId,
+        answerId: String((answer as any)?._id || ""),
+      }, {
+        // Priority: return AI response faster
+        priority: 10,
+        // Delay slightly to batch multiple requests
+        delay: 100,
+      });
+    }
 
     return NextResponse.json({
       answerId: String((answer as any)?._id || ""),
       audioUrl: uploaded.url,
       transcribedText,
       aiText: replyText,
-      aiAudioUrl: tts?.url || null,
+      aiAudioUrl: null, // Will be available after TTS completes in background
     });
   } catch (error: any) {
     if (error?.message === "rate_limited") {
