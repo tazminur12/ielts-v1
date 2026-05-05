@@ -12,6 +12,7 @@ import { randomUUID } from "crypto";
 import { computeExpiresAt, computeRemainingSeconds } from "@/lib/attemptTiming";
 import { getAttemptSessionId, checkAttemptSession } from "@/lib/attemptSession";
 import { submitAttemptDoc } from "@/lib/attemptSubmission";
+import { useFeature as consumeFeature } from "@/lib/accessControl";
 
 // GET /api/attempts  — user's own attempts history
 export async function GET(req: NextRequest) {
@@ -57,6 +58,8 @@ export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
     await connectDB();
 
+    let subscription: any | null = null;
+
     const { testId } = await req.json();
     if (!testId) {
       return NextResponse.json({ message: "testId is required" }, { status: 400 });
@@ -73,7 +76,7 @@ export async function POST(req: NextRequest) {
         .select("slug tierRank displayOrder")
         .lean();
 
-      const subscription = (await Subscription.findOne({
+      subscription = (await Subscription.findOne({
         userId: session.user.id,
         status: { $in: ["active", "trial"] },
         endDate: { $gte: new Date() },
@@ -176,6 +179,10 @@ export async function POST(req: NextRequest) {
         await existing.save();
         return NextResponse.json({ attempt: existing, resumed: true, sessionId: existing.activeSessionId });
       }
+    }
+
+    if (actor.kind === "user" && test.examType === "mock" && subscription) {
+      await consumeFeature(actor.id, "mockTest");
     }
 
     const ipAddress =

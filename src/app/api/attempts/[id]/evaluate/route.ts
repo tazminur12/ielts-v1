@@ -45,7 +45,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // ✅ Queue speaking evaluation instead of blocking
       const aiQueue = getAiQueue();
       if (aiQueue) {
-        await aiQueue.add('evaluate-speaking', {
+        await aiQueue.add('speaking_eval', {
           answerId: String(pendingSpeaking._id),
           attemptId: id,
           userId: session?.user?.id || null,
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // ✅ Queue writing evaluation instead of blocking
       const aiQueue = getAiQueue();
       if (aiQueue) {
-        await aiQueue.add('evaluate-writing', {
+        await aiQueue.add('writing_eval', {
           answerId: String(pendingWriting._id),
           attemptId: id,
           userId: session?.user?.id || null,

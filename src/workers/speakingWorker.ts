@@ -15,7 +15,7 @@ const connection = new IORedis(redisUrl, {
 
 // Process speaking TTS jobs
 const ttsWorker = new Worker(
-  "speaking:tts",
+  "speaking-tts",
   async (job) => {
     await processSpeakingTtsJob(job);
   },
@@ -29,7 +29,7 @@ const ttsWorker = new Worker(
 
 // Process speaking analysis jobs  
 const analysisWorker = new Worker(
-  "speaking:analysis",
+  "speaking-analysis",
   async (job) => {
     await processSpeakingAnalysisJob(job);
   },

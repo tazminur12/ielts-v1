@@ -75,6 +75,11 @@ export async function retryPendingBackups(uploadFn: (questionId: string, attempt
     
     for (const backup of backups) {
       try {
+        if (!backup.blob || backup.blob.size === 0) {
+          console.warn(`Skipping empty backup for question: ${backup.questionId}`);
+          await deleteBackup(backup.questionId);
+          continue;
+        }
         console.log(`Retrying backup for question: ${backup.questionId}`);
         await uploadFn(backup.questionId, backup.attemptId, backup.blob);
         await deleteBackup(backup.questionId);

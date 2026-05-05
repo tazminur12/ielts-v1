@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -202,6 +202,8 @@ function ResultsContent() {
   const [error, setError] = useState("");
   const [expandedAnswer, setExpandedAnswer] = useState<string | null>(null);
   const [expandedAI, setExpandedAI] = useState<string | null>(null);
+  const [speakingEvals, setSpeakingEvals] = useState<Record<string, SpeakingEvaluation | "loading" | "pending">>({});
+  const evaluationRequestedRef = useRef(false);
 
   useEffect(() => {
     if (!attemptId) { setError("No attempt ID provided."); setLoading(false); return; }
@@ -226,6 +228,17 @@ function ResultsContent() {
       return; // Don't poll if not pending
     }
 
+    if (!evaluationRequestedRef.current) {
+      evaluationRequestedRef.current = true;
+      fetch(`/api/attempts/${attemptId}/evaluate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }).catch(() => {
+        evaluationRequestedRef.current = false;
+      });
+    }
+
     const pollInterval = setInterval(async () => {
       try {
         const res = await fetch(`/api/attempts/${attemptId}`);
@@ -245,6 +258,63 @@ function ResultsContent() {
 
     return () => clearInterval(pollInterval);
   }, [attemptId, attempt]);
+
+  useEffect(() => {
+    if (!attemptId || answers.length === 0) return;
+
+    const speakingQsWithoutEval = answers.filter(
+      (a) => a.questionType === "speaking" && !a.speakingEvaluation
+    );
+
+    if (speakingQsWithoutEval.length === 0) return;
+
+    const initial: Record<string, "loading"> = {};
+    speakingQsWithoutEval.forEach((a) => {
+      initial[a._id] = "loading";
+    });
+    setSpeakingEvals((prev) => ({ ...prev, ...initial }));
+
+    speakingQsWithoutEval.forEach((a) => {
+      fetch("/api/speaking/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attemptId, questionId: a._id }),
+      }).catch(() => {});
+    });
+
+    const intervals: Record<string, NodeJS.Timeout> = {};
+
+    speakingQsWithoutEval.forEach((answer) => {
+      let pollCount = 0;
+      const maxPolls = 30;
+
+      intervals[answer._id] = setInterval(async () => {
+        pollCount++;
+        if (pollCount > maxPolls) {
+          clearInterval(intervals[answer._id]);
+          setSpeakingEvals((prev) => ({ ...prev, [answer._id]: "pending" }));
+          return;
+        }
+
+        try {
+          const res = await fetch(
+            `/api/speaking/evaluate?attemptId=${attemptId}&questionId=${answer._id}`
+          );
+          if (!res.ok) return;
+          const data = await res.json();
+
+          if (data.speakingEvaluation) {
+            setSpeakingEvals((prev) => ({ ...prev, [answer._id]: data.speakingEvaluation }));
+            clearInterval(intervals[answer._id]);
+          }
+        } catch {}
+      }, 3000);
+    });
+
+    return () => {
+      Object.values(intervals).forEach((id) => clearInterval(id));
+    };
+  }, [attemptId, answers]);
 
   // ── Loading ──────────────────────────────────────────────────────────────
   if (loading) {
@@ -280,9 +350,7 @@ function ResultsContent() {
     (a) => a.questionType !== "essay" && a.questionType !== "speaking"
   ).sort((a, b) => a.questionNumber - b.questionNumber);
 
-  const speakingAnswers = answers.filter(
-    (a) => a.questionType === "speaking" && a.speakingEvaluation
-  ).sort((a, b) => a.questionNumber - b.questionNumber);
+  const allSpeakingAnswers = answers.filter((a) => a.questionType === "speaking");
 
   const aiAnswers = answers.filter((a) => a.aiEvaluation);
   const testAccessLevel = attempt.testId?.accessLevel ?? "free";
@@ -490,37 +558,62 @@ function ResultsContent() {
         )}
 
         {/* ── Speaking Evaluation Results ─────────────────────────────── */}
-        {speakingAnswers.length > 0 && (
+        {allSpeakingAnswers.length > 0 && (
           <div>
             <SectionHeader icon={<Mic size={16} />} title="Speaking Evaluation" />
             <div className="mt-3 space-y-4">
-              {speakingAnswers.map((answer) => {
-                const eval_data = answer.speakingEvaluation!;
-                // Infer part number from question number ranges
-                let partNumber: 1 | 2 | 3 = 1;
-                if (answer.questionNumber > 3) partNumber = 2;
-                if (answer.questionNumber > 8) partNumber = 3;
+              {allSpeakingAnswers
+                .sort((a, b) => a.questionNumber - b.questionNumber)
+                .map((answer) => {
+                  const evalData = answer.speakingEvaluation ?? speakingEvals[answer._id];
 
-                return (
-                  <SpeakingResultCard
-                    key={answer._id}
-                    questionNumber={answer.questionNumber}
-                    questionText={answer.questionText || `Speaking Question ${answer.questionNumber}`}
-                    partNumber={partNumber}
-                    evaluation={{
-                      fluencyCoherence: eval_data.fluencyCoherence,
-                      lexicalResource: eval_data.lexicalResource,
-                      grammaticalRange: eval_data.grammaticalRange,
-                      pronunciation: eval_data.pronunciation,
-                      overallBand: eval_data.overallBand,
-                      generalFeedback: eval_data.generalFeedback,
-                      strengths: eval_data.strengths,
-                      weaknesses: eval_data.weaknesses,
-                    }}
-                    transcript={eval_data.transcript}
-                  />
-                );
-              })}
+                  if (!evalData || evalData === "loading") {
+                    return (
+                      <div
+                        key={answer._id}
+                        className="bg-white rounded-2xl border border-slate-200 p-6 flex items-center gap-4"
+                      >
+                        <Loader2 size={24} className="text-[#1a3a5c] animate-spin shrink-0" />
+                        <div>
+                          <p className="font-bold text-slate-700">
+                            Speaking Question {answer.questionNumber} — Evaluating...
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1">
+                            AI examiner is reviewing your response. Usually takes 15-30 seconds.
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (evalData === "pending") {
+                    return (
+                      <div key={answer._id} className="bg-amber-50 rounded-2xl border border-amber-200 p-6">
+                        <p className="font-bold text-amber-800">
+                          Speaking Question {answer.questionNumber} — Taking longer than expected
+                        </p>
+                        <p className="text-xs text-amber-600 mt-1">
+                          Please refresh the page in a few minutes to see your result.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  let partNumber: 1 | 2 | 3 = 1;
+                  if (answer.questionNumber > 3) partNumber = 2;
+                  if (answer.questionNumber > 8) partNumber = 3;
+
+                  return (
+                    <SpeakingResultCard
+                      key={answer._id}
+                      questionNumber={answer.questionNumber}
+                      questionText={answer.questionText || `Speaking Question ${answer.questionNumber}`}
+                      partNumber={partNumber}
+                      evaluation={evalData as SpeakingEvaluation}
+                      transcript={(evalData as SpeakingEvaluation).transcript}
+                    />
+                  );
+                })}
             </div>
           </div>
         )}

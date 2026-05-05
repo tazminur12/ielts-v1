@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Award,
   Calendar,
@@ -102,13 +102,14 @@ export default function ResultsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pagination, setPagination] = useState({ total: 0, pages: 1, page: 1 });
+  const evaluationRequestedRef = useRef<Set<string>>(new Set());
 
   const [search, setSearch] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'evaluated' | 'submitted'>('all');
 
-  const fetchAttempts = async (page = 1) => {
-    setLoading(true);
+  const fetchAttempts = useCallback(async (page = 1, opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     setError('');
     try {
       const params = new URLSearchParams({
@@ -119,19 +120,47 @@ export default function ResultsPage() {
       const res = await fetch(`/api/attempts?${params}`);
       if (!res.ok) throw new Error('Failed to load results');
       const data = await res.json();
-      setAttempts((data.attempts ?? []).filter((a: Attempt) => a.status !== 'in_progress'));
+      const filtered = (data.attempts ?? []).filter((a: Attempt) => a.status !== 'in_progress');
+      setAttempts(filtered);
       setPagination(data.pagination ?? { total: 0, pages: 1, page: 1 });
+
+      // Trigger evaluation for pending attempts (once per attempt)
+      const pending = filtered.filter(
+        (a: Attempt) => a.status === 'submitted' && !safeBand(a.overallBand ?? a.bandScore)
+      );
+      for (const a of pending) {
+        if (evaluationRequestedRef.current.has(a._id)) continue;
+        evaluationRequestedRef.current.add(a._id);
+        fetch(`/api/attempts/${a._id}/evaluate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }).catch(() => {
+          evaluationRequestedRef.current.delete(a._id);
+        });
+      }
     } catch (e: any) {
       setError(e?.message || 'Something went wrong');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
-  };
+  }, [statusFilter]);
 
   useEffect(() => {
     fetchAttempts(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter]);
+  }, [fetchAttempts]);
+
+  // Poll while any submitted attempt is pending evaluation
+  useEffect(() => {
+    const pending = attempts.some(
+      (a) => a.status === 'submitted' && !safeBand(a.overallBand ?? a.bandScore)
+    );
+    if (!pending) return;
+    const id = window.setInterval(() => {
+      fetchAttempts(pagination.page || 1, { silent: true });
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [attempts, fetchAttempts, pagination.page]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

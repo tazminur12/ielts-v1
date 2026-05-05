@@ -41,7 +41,7 @@ export function getBullConnection(): IORedis | null {
     },
   });
 
-  const speakingTtsQueue = new Queue("speaking:tts", {
+  const speakingTtsQueue = new Queue("speaking-tts", {
     connection,
     defaultJobOptions: {
       attempts: 3,
@@ -51,7 +51,7 @@ export function getBullConnection(): IORedis | null {
     },
   });
 
-  const speakingAnalysisQueue = new Queue("speaking:analysis", {
+  const speakingAnalysisQueue = new Queue("speaking-analysis", {
     connection,
     defaultJobOptions: {
       attempts: 2,
