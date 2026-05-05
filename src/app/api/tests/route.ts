@@ -26,18 +26,22 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const examType = searchParams.get("examType"); // "mock" | "practice"
     const moduleFilter = searchParams.get("module");
+    const typeFilterRaw = searchParams.get("type"); // "Academic" | "General"
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "12");
 
     const filter: Record<string, unknown> = { status: "published" };
     if (examType) filter.examType = examType;
     if (moduleFilter) filter.module = moduleFilter;
+    if (typeFilterRaw && ["Academic", "General"].includes(typeFilterRaw)) {
+      filter.type = typeFilterRaw;
+    }
 
     // Shared caches (read-heavy)
     const testsBuster = await getCacheBuster("tests");
     const activePlansKey = "ielts:plans:activeSlugs:v1";
     const plansMetaKey = "ielts:plans:meta:v1";
-    const testsKey = `ielts:tests:list:v1:${testsBuster}:${examType || "all"}:${moduleFilter || "all"}:${page}:${limit}`;
+    const testsKey = `ielts:tests:list:v1:${testsBuster}:${examType || "all"}:${moduleFilter || "all"}:${typeFilterRaw || "all"}:${page}:${limit}`;
 
     let activePlans = await redisGetJson<
       { slug: string; tierRank?: number; displayOrder?: number }[]

@@ -20,6 +20,7 @@ import {
   GENERATION_MODEL,
   sanitizeIeltsCandidateText,
 } from "@/lib/ieltsGeneration";
+import { READING_SAMPLES } from "@/lib/ieltsReadingSamples";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -39,6 +40,117 @@ interface AISectionPayload {
   instructions?: string;
   passage?: string;
   groups?: unknown[];
+}
+
+const READING_WORD_LIMIT_RUBRIC_RE =
+  /no\s+more\s+than\s+(one|two|three)\s+words?(?:\s+and\/or\s+a\s+number)?|one\s+word\s+only|two\s+words?\s+only|three\s+words?\s+only|and\/or\s+a\s+number/i;
+
+type ReadingRubricRule = {
+  instructionIncludesAny: RegExp[];
+};
+
+const READING_RUBRIC_RULES: Partial<Record<string, ReadingRubricRule>> = {
+  true_false_not_given: {
+    instructionIncludesAny: [
+      /do\s+the\s+following\s+statements\s+agree\s+with\s+the\s+information/i,
+      /do\s+the\s+following\s+statements\s+agree\s+with\s+the\s+claims\s+of\s+the\s+writer/i,
+      /yes\s*\/\s*no\s*\/\s*not\s+given/i,
+      /true\s*\/\s*false\s*\/\s*not\s+given/i,
+    ],
+  },
+  matching_headings: {
+    instructionIncludesAny: [/choose\s+the\s+correct\s+heading/i, /list\s+of\s+headings/i],
+  },
+  matching: {
+    instructionIncludesAny: [
+      /which\s+paragraph\s+contains\s+the\s+following\s+information/i,
+      /match\s+the\s+following/i,
+      /choose\s+two\s+letters/i,
+      /choose\s+the\s+correct\s+letter/i,
+      /sentence\s+endings/i,
+      /causes?\s+and\s+effects?/i,
+      /selecting\s+factors?/i,
+    ],
+  },
+  multiple_choice: {
+    instructionIncludesAny: [
+      /choose\s+the\s+correct\s+letter\s*,?\s*a\s*,?\s*b\s*,?\s*c(?:\s*or\s*d)?/i,
+      /choose\s+two\s+letters/i,
+      /choose\s+the\s+correct\s+answer/i,
+    ],
+  },
+  summary_completion: {
+    instructionIncludesAny: [
+      /complete\s+the\s+summary/i,
+      /complete\s+the\s+notes?/i,
+      /complete\s+the\s+table/i,
+      /complete\s+the\s+flow-?chart/i,
+      /label\s+the\s+diagram/i,
+      READING_WORD_LIMIT_RUBRIC_RE,
+    ],
+  },
+  sentence_completion: {
+    instructionIncludesAny: [/complete\s+the\s+sentences?/i, READING_WORD_LIMIT_RUBRIC_RE],
+  },
+  fill_blank: {
+    instructionIncludesAny: [/complete/i, READING_WORD_LIMIT_RUBRIC_RE],
+  },
+  short_answer: {
+    instructionIncludesAny: [/answer\s+the\s+questions?/i, READING_WORD_LIMIT_RUBRIC_RE],
+  },
+};
+
+function normalizeIeltsReadingType(type: string): "Academic" | "General" {
+  return String(type || "").toLowerCase().includes("general") ? "General" : "Academic";
+}
+
+function readingFewShotBlock(ieltsType: string): string {
+  const normalized = normalizeIeltsReadingType(ieltsType);
+  const samples = READING_SAMPLES.filter((s) => s.ieltsType === normalized).slice(0, 5);
+  if (samples.length === 0) {
+    return "No few-shot samples are configured yet for this IELTS type. Follow official IELTS style strictly.";
+  }
+  return `Few-shot style anchors (${normalized}) — imitate style and rubric wording, but do not copy text verbatim:\n${JSON.stringify(samples, null, 2)}`;
+}
+
+function instructionMatchesReadingRubric(questionType: string, instruction: string): boolean {
+  const rule = READING_RUBRIC_RULES[questionType];
+  if (!rule) return true;
+  const normalizedInstruction = String(instruction || "").trim();
+  if (!normalizedInstruction) return false;
+  return rule.instructionIncludesAny.some((rx) => rx.test(normalizedInstruction));
+}
+
+function validateReadingRubricsAndVariety(sections: Array<z.infer<typeof AIGeneratedSectionSchema>>) {
+  const readingSections = sections
+    .filter((s) => String(s.sectionType || "").toLowerCase().includes("reading"))
+    .sort((a, b) => Number(a.partNumber || 0) - Number(b.partNumber || 0));
+
+  for (const section of readingSections) {
+    const groups = Array.isArray(section.groups) ? section.groups : [];
+    const uniqueTypes = new Set<string>();
+
+    for (const group of groups) {
+      const questions = Array.isArray(group.questions) ? group.questions : [];
+      if (questions.length === 0) continue;
+      const qType = normalizeQuestionType(String(questions[0].type || ""));
+      uniqueTypes.add(qType);
+      const instructionText = [String(group.instruction || ""), String(group.passage || "")]
+        .filter(Boolean)
+        .join(" ");
+      if (!instructionMatchesReadingRubric(qType, instructionText)) {
+        throw new Error(
+          `Reading Passage ${section.partNumber || "?"}: instruction rubric mismatch for question type "${qType}".`
+        );
+      }
+    }
+
+    if (uniqueTypes.size < 2 || uniqueTypes.size > 3) {
+      throw new Error(
+        `Reading Passage ${section.partNumber || "?"} must contain 2-3 mixed question types (found ${uniqueTypes.size}).`
+      );
+    }
+  }
 }
 
 function mockPreamble(
@@ -94,6 +206,7 @@ async function persistGroupsForSection(
     title?: string;
     instruction?: string;
     passage?: string;
+    matchingOptions?: unknown[];
     questions?: Array<{
       type?: string;
       text?: string;
@@ -129,6 +242,9 @@ async function persistGroupsForSection(
       questionType: normalizeQuestionType(qs[0]?.type) as IQuestionGroup["questionType"],
       questionNumberStart: qCursor,
       questionNumberEnd: qCursor + qs.length - 1,
+      matchingOptions: Array.isArray(groupData.matchingOptions)
+        ? groupData.matchingOptions.map((opt) => sanitizeIeltsCandidateText(String(opt || ""))).filter(Boolean)
+        : [],
     });
 
     for (let j = 0; j < qs.length; j++) {
@@ -370,6 +486,17 @@ Return ONLY valid JSON (no markdown) in exactly this shape:
 function buildOfficialReadingModulePrompt(topic: string, difficulty: string, ieltsType: string, titleBase?: string) {
   const m = mockPreamble("practice", ieltsType);
   const base = (titleBase || "").trim() || "Reading Passage";
+  const normalizedType = normalizeIeltsReadingType(ieltsType);
+  const structureRules =
+    normalizedType === "General"
+      ? `- IELTS General Training structure:
+  - Passage 1 (Section 1): 2-3 short social-survival texts (e.g., notices, adverts, schedules, leaflet, short letter) merged into one coherent section passage.
+  - Passage 2 (Section 2): 2 work-related texts (e.g., job guidance, workplace policy, training memo).
+  - Passage 3 (Section 3): one longer general-interest passage in article/report style.`
+      : `- IELTS Academic structure:
+  - Passage 1, 2, 3 are long academic-style texts (journals, research summaries, historical/scientific explanations), each roughly 850-950 words.`;
+
+  const fewShot = readingFewShotBlock(ieltsType);
   return `Produce a complete ${ieltsType} IELTS Reading module that strictly follows the official international structure.
 ${m}
 Topic/theme focus: ${topic || "General"}
@@ -378,13 +505,28 @@ Difficulty: ${difficulty || "medium"}
 STRICT REQUIREMENTS (must follow exactly):
 - 3 passages (partNumber 1..3)
 - Total questions = 40 with distribution: Passage 1 = 13, Passage 2 = 13, Passage 3 = 14
-- Each passage must be 700–1000 words in "passage" (aim ~850). Before returning, count the words and ensure each passage is within range.
+- Time expectation: 60 minutes total for the full Reading module.
+${structureRules}
+- Each passage must be 700-1000 words in "passage" (aim ~850). Before returning, count the words and ensure each passage is within range.
+- Passage text must be split into paragraphs with blank lines between paragraphs (double newline) so UI can auto-label A, B, C...
 - Use "${base}" as the base sectionTitle and append the partNumber (e.g. "${base} 1", "${base} 2", "${base} 3").
 - Use authentic IELTS rubrics and realistic topics (not a generic essay about the topic)
+- Each passage must contain 2-3 DIFFERENT question-type groups (never only one type for an entire passage).
+- The 2-3 groups can be selected from this official IELTS-style catalogue:
+  - true_false_not_given (including YES/NO/NOT GIVEN writer-view variant by instruction wording)
+  - matching / matching_headings (including matching information/features/sentence endings/causes-effects/selecting factors via instruction wording)
+  - multiple_choice (single answer A-D and choose TWO letters variants)
+  - summary_completion / sentence_completion / fill_blank / short_answer
 - Objective questions must include correctAnswer
 - multiple_choice must have exactly 4 options and correctAnswer must be A/B/C/D
+- For completion/short-answer style groups, instruction must include explicit IELTS word limit rubric (e.g., "NO MORE THAN TWO WORDS AND/OR A NUMBER").
+- true_false_not_given groups must use one of the exact instruction intents:
+  - Information fact rubric: "Do the following statements agree with the information in the passage?"
+  - Writer view rubric: "Do the following statements agree with the claims of the writer?" (for YES/NO/NOT GIVEN response set)
 
-Return ONLY valid JSON (no markdown) in exactly this shape:
+${fewShot}
+
+Return ONLY valid JSON (no markdown) in exactly this shape (2-3 groups per passage with mixed question types):
 {
   "schemaVersion": "ielts_module_v1",
   "sections": [
@@ -393,19 +535,35 @@ Return ONLY valid JSON (no markdown) in exactly this shape:
       "sectionType": "reading_passage",
       "partNumber": 1,
       "instruction": "Read the passage and answer the questions.",
-      "passage": "700–1000 word passage.",
+      "passage": "Paragraph 1 text...\\n\\nParagraph 2 text...\\n\\nParagraph 3 text...",
       "groups": [
         {
-          "title": "Questions 1-13",
-          "instruction": "Do the following statements agree with the information in the passage?",
+          "title": "Questions 1-5",
+          "instruction": "Choose the correct heading for paragraphs A-E from the list of headings below.",
+          "matchingOptions": ["i. Heading one", "ii. Heading two", "iii. Heading three", "iv. Heading four", "v. Heading five", "vi. Heading six"],
+          "questions": [
+            { "type": "matching_headings", "text": "Paragraph A", "correctAnswer": "ii", "marks": 1 }
+          ]
+        },
+        {
+          "title": "Questions 6-9",
+          "instruction": "Do the following statements agree with the information in the passage? Write TRUE, FALSE or NOT GIVEN.",
           "questions": [
             { "type": "true_false_not_given", "text": "...", "correctAnswer": "TRUE", "marks": 1 }
+          ]
+        },
+        {
+          "title": "Questions 10-13",
+          "instruction": "Complete the summary below. Choose NO MORE THAN TWO WORDS AND/OR A NUMBER from the passage for each answer.",
+          "questions": [
+            { "type": "summary_completion", "text": "...______...", "correctAnswer": "example", "marks": 1 }
           ]
         }
       ]
     }
   ]
-}`;
+}
+For matching / matching_headings groups you MUST also include a "matchingOptions" array on the group itself. The example above is illustrative only - vary group count (2-3) and question type combinations across the 3 passages so no two passages use the same combo.`;
 }
 
 function buildOfficialWritingModulePrompt(topic: string, difficulty: string, ieltsType: string, titleBase?: string) {
@@ -606,7 +764,7 @@ Difficulty: ${difficulty || "medium"}
 STRICT IELTS PARITY REQUIREMENTS (must follow exactly):
 - Listening must have EXACTLY 4 sections (partNumber 1..4). Each listening section must have EXACTLY 10 scored questions. Total listening questions = 40.
 - Reading must have EXACTLY 3 passages (partNumber 1..3). Total reading questions = 40 with distribution: Passage 1 = 13, Passage 2 = 13, Passage 3 = 14.
-- Reading passageText must be 700–1000 words each (count words; not characters).
+- Reading passageText must be 700-1000 words each (count words; not characters), paragraphized with blank lines, and each passage must include 2-3 mixed question types (not a single-type passage).
 - Writing must have EXACTLY 2 tasks: Task 1 and Task 2 (each in its own writing_task section with partNumber 1 and 2). Task 1 instruction must say "You should spend about 20 minutes...". Task 2 instruction must say "You should spend about 40 minutes...". Each task must include ONE essay question.
 - Speaking must have Parts 1, 2, 3 (three speaking_part sections with partNumber 1, 2, 3). Use question type "speaking" (not short_answer/essay) so the platform records audio.
   - Part 1: 6–8 short examiner questions (speakingDuration ~30s).
@@ -710,6 +868,7 @@ const AIGeneratedGroupSchema = z
     title: z.string().optional(),
     instruction: z.string().optional(),
     passage: z.string().optional(),
+    matchingOptions: z.array(z.any()).optional(),
     questions: z.array(AIGeneratedQuestionSchema).optional(),
   })
   .passthrough();
@@ -936,6 +1095,7 @@ function validateFullMockParity(
       throw new Error(`Reading passages word count must be 700–1000 words (${readingWcViolations.join(", ")}).`);
     }
   }
+  validateReadingRubricsAndVariety(readingOrdered);
   validateQuestionsBasics(sections);
 }
 
@@ -983,6 +1143,7 @@ function validateOfficialModuleParity(
         throw new Error(`Reading passages word count must be 700–1000 words (${wcViolations.join(", ")}).`);
       }
     }
+    validateReadingRubricsAndVariety(ordered);
     validateQuestionsBasics(reading);
     return;
   }

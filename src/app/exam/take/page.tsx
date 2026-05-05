@@ -99,6 +99,7 @@ interface Section {
   _id: string;
   title: string;
   order: number;
+  partNumber?: number;
   sectionType: "listening_part" | "reading_passage" | "writing_task" | "speaking_part";
   instructions?: string;
   audioUrl?: string;
@@ -135,6 +136,7 @@ interface RawSection {
   _id: string;
   title: string;
   order: number;
+  partNumber?: number;
   sectionType: "listening_part" | "reading_passage" | "writing_task" | "speaking_part";
   instructions?: string;
   audioUrl?: string;
@@ -178,6 +180,43 @@ function formatTime(secs: number) {
   const s = secs % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function readingParagraphLabel(index: number) {
+  return String.fromCharCode(65 + index);
+}
+
+function splitReadingParagraphs(text: string): string[] {
+  return String(text || "")
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+function sectionQuestionRange(section: Section): { start: number; end: number } | null {
+  const allNumbers = section.groups
+    .flatMap((group) => [
+      Number(group.questionNumberStart || 0),
+      Number(group.questionNumberEnd || 0),
+      ...group.questions.map((q) => Number(q.questionNumber || 0)),
+    ])
+    .filter((n) => Number.isFinite(n) && n > 0);
+
+  if (allNumbers.length === 0) return null;
+  return { start: Math.min(...allNumbers), end: Math.max(...allNumbers) };
+}
+
+function isYesNoNotGivenVariant(instructionOrQuestion: string): boolean {
+  const value = String(instructionOrQuestion || "");
+  return /yes\s*\/\s*no\s*\/\s*not\s+given|claims\s+of\s+the\s+writer|writer'?s\s+views?/i.test(value);
+}
+
+function extractWordLimitHint(instructions: string): string | null {
+  const value = String(instructions || "");
+  const match = value.match(
+    /NO MORE THAN (?:ONE|TWO|THREE) WORDS?(?: AND\/OR A NUMBER)?|NO MORE THAN (?:ONE|TWO|THREE) WORD|(?:ONE|TWO|THREE) WORDS? ONLY|AND\/OR A NUMBER/i
+  );
+  return match ? match[0].toUpperCase() : null;
 }
 
 function buildNestedTest(
@@ -1779,6 +1818,7 @@ function SectionView({
           speakingAnalysis={speakingAnalysis}
           speakingLiveMetrics={speakingLiveMetrics}
           forceSpeaking={isSpeaking}
+          isReadingSection={isReading}
           uploadStatus={uploadStatus}
           retryAttempt={retryAttempt}
         />
@@ -1788,6 +1828,11 @@ function SectionView({
 
   /* ── Reading: split-pane (question booklet + answer sheet feel) ─────── */
   if (isReading && section.passageText) {
+    const readingPart = Number(section.partNumber || section.order || 1);
+    const readingRange = sectionQuestionRange(section);
+    const readingParagraphs = splitReadingParagraphs(section.passageText);
+    const hasParagraphLabels = readingParagraphs.length > 1;
+
     return (
       <div className="flex h-full min-h-0 overflow-hidden">
         <div className="w-1/2 min-w-0 shrink-0 overflow-y-auto border-r border-[#d4cfc4] bg-[#faf9f6] shadow-[inset_-8px_0_24px_-12px_rgba(12,26,46,0.06)]">
@@ -1800,6 +1845,16 @@ function SectionView({
             <h2 className="text-lg font-bold text-[#0c1a2e] mb-4 leading-snug">
               {section.title}
             </h2>
+            {readingRange && (
+              <div className="mb-5 border border-[#d4cfc4] bg-white px-4 py-3">
+                <p className="text-xs tracking-[0.16em] font-bold text-[#0c1a2e] uppercase mb-1">
+                  Reading Passage {readingPart}
+                </p>
+                <p className="text-sm text-slate-700 leading-relaxed font-serif">
+                  You should spend about 20 minutes on Questions {readingRange.start}-{readingRange.end} which are based on Reading Passage {readingPart} below.
+                </p>
+              </div>
+            )}
             {section.passageImage && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -1808,9 +1863,24 @@ function SectionView({
                 className="w-full mb-5 border border-[#d4cfc4]"
               />
             )}
-            <div className="text-slate-800 leading-[1.85] text-[15px] font-serif whitespace-pre-wrap selection:bg-amber-100">
-              {section.passageText}
-            </div>
+            {hasParagraphLabels ? (
+              <div className="space-y-4 text-slate-800 leading-[1.85] text-[15px] font-serif selection:bg-amber-100">
+                {readingParagraphs.map((paragraph, idx) => (
+                  <div key={`${idx}-${paragraph.slice(0, 20)}`} className="grid grid-cols-[2rem_1fr] gap-3">
+                    <div className="pt-0.5">
+                      <span className="inline-flex h-7 w-7 items-center justify-center bg-[#0c1a2e] text-[#f4ecd7] text-xs font-bold">
+                        {readingParagraphLabel(idx)}
+                      </span>
+                    </div>
+                    <p className="whitespace-pre-wrap">{paragraph}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-slate-800 leading-[1.85] text-[15px] font-serif whitespace-pre-wrap selection:bg-amber-100">
+                {section.passageText}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex-1 min-w-0 overflow-y-auto bg-[#e8e4dc]">
@@ -1955,6 +2025,7 @@ function QuestionGroupView({
   speakingAnalysis,
   speakingLiveMetrics,
   forceSpeaking,
+  isReadingSection,
   uploadStatus,
   retryAttempt,
 }: {
@@ -1984,6 +2055,7 @@ function QuestionGroupView({
   }>;
   speakingLiveMetrics: Record<string, LiveMetricsSnapshot | null>;
   forceSpeaking: boolean;
+  isReadingSection: boolean;
   uploadStatus: Record<string, 'idle' | 'uploading' | 'retrying' | 'failed' | 'saved'>;
   retryAttempt: Record<string, number>;
 }) {
@@ -2014,11 +2086,15 @@ function QuestionGroupView({
 
       <div className="p-4 sm:p-5 space-y-4">
         {group.instructions && (
-          <div className="border border-[#d4cfc4] bg-white px-4 py-3 text-sm text-slate-700 leading-relaxed">
+          <div
+            className={`border border-[#d4cfc4] bg-white px-4 py-3 text-sm leading-relaxed ${
+              isReadingSection ? "text-[#1b2737] font-serif" : "text-slate-700"
+            }`}
+          >
             <p className="text-[10px] font-bold text-[#0c1a2e] uppercase tracking-wide mb-1">
               Task instructions
             </p>
-            {group.instructions}
+            <p className={isReadingSection ? "tracking-[0.01em]" : ""}>{group.instructions}</p>
           </div>
         )}
 
@@ -2056,6 +2132,7 @@ function QuestionGroupView({
               speakingDone={speakingDone[q._id] ?? false}
               liveTurn={liveTurns[q._id] ?? null}
               forceSpeaking={forceSpeaking}
+              groupInstructions={group.instructions}
               matchingOptions={group.matchingOptions}
               onAnswer={onAnswer}
               onWritingChange={onWritingChange}
@@ -2092,6 +2169,7 @@ function QuestionView({
   speakingDone,
   liveTurn,
   forceSpeaking,
+  groupInstructions,
   matchingOptions,
   onAnswer,
   onWritingChange,
@@ -2118,6 +2196,7 @@ function QuestionView({
   speakingDone: boolean;
   liveTurn: { userText: string; aiText: string; aiAudioUrl: string | null } | null;
   forceSpeaking: boolean;
+  groupInstructions?: string;
   matchingOptions?: string[];
   onAnswer: (qId: string, val: string, qType: string) => void;
   onWritingChange: (qId: string, text: string) => void;
@@ -2142,6 +2221,15 @@ function QuestionView({
   const qId = question._id;
   const qType = forceSpeaking ? "speaking" : question.questionType;
   const isAnswered = !!answer;
+  const tfngIsYesNoVariant = isYesNoNotGivenVariant(
+    `${String(groupInstructions || "")}\n${String(question.questionText || "")}`
+  );
+  const tfngOptions = tfngIsYesNoVariant ? ["YES", "NO", "NOT GIVEN"] : ["TRUE", "FALSE", "NOT GIVEN"];
+  const wordLimitHint =
+    qType === "fill_blank" || qType === "short_answer" || qType === "sentence_completion" || qType === "summary_completion"
+      ? extractWordLimitHint(String(groupInstructions || ""))
+      : null;
+  const hintId = wordLimitHint ? `word-limit-hint-${qId}` : undefined;
 
   const effectiveMatchingOptions = matchingOptions ?? question.matchingOptions ?? [];
 
@@ -2330,7 +2418,7 @@ function QuestionView({
           {/* ── True / False / Not Given ─────────────────────────────── */}
           {qType === "true_false_not_given" && (
             <div className="flex flex-wrap gap-2">
-              {["TRUE", "FALSE", "NOT GIVEN"].map((opt) => (
+              {tfngOptions.map((opt) => (
                 <button
                   key={opt}
                   onClick={() => onAnswer(qId, opt, qType)}
@@ -2348,12 +2436,21 @@ function QuestionView({
 
           {/* ── Fill in the Blank / Short Answer / Sentence/Summary Completion ── */}
           {(qType === "fill_blank" || qType === "short_answer" || qType === "sentence_completion" || qType === "summary_completion") && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {wordLimitHint && (
+                <span
+                  id={hintId}
+                  className="inline-flex items-center rounded-full border border-[#d4cfc4] bg-[#faf9f6] px-2.5 py-1 text-[10px] font-bold tracking-wide text-[#0c1a2e]"
+                >
+                  {wordLimitHint}
+                </span>
+              )}
               <input
                 type="text"
                 value={answer}
                 onChange={(e) => onAnswer(qId, e.target.value, qType)}
-                placeholder="Write your answer here…"
+                aria-describedby={hintId}
+                placeholder={wordLimitHint || "Write your answer here..."}
                 className={`border rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#0c1a2e] focus:border-[#0c1a2e] focus:outline-none transition-all w-full max-w-sm ${isAnswered ? "border-emerald-300 bg-white" : "border-slate-200 bg-white"}`}
               />
               {isAnswered && <CheckCircle size={16} className="text-emerald-500 shrink-0" />}
