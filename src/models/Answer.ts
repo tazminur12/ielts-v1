@@ -8,6 +8,7 @@ export interface IAnswer extends Document {
   questionId: mongoose.Types.ObjectId;
   questionNumber: number;
   questionType: string;
+  questionText?: string;        // The actual question text (for speaking/display)
   // Student's answer
   selectedOption?: string;      // For multiple choice: "A", "B", "C", "D"
   textAnswer?: string;          // For fill_blank, short_answer, essay
@@ -43,6 +44,19 @@ export interface IAnswer extends Document {
     evaluatedAt: Date;
     evaluatedBy: "ai" | "manual";
     examinerNotes?: string;
+  };
+  speakingEvaluation?: {
+    transcript: string;
+    fluencyCoherence: { bandScore: number; feedback: string; tips: string[] };
+    lexicalResource: { bandScore: number; feedback: string; tips: string[] };
+    grammaticalRange: { bandScore: number; feedback: string; tips: string[] };
+    pronunciation: { bandScore: number; feedback: string; tips: string[] };
+    overallBand: number;
+    generalFeedback: string;
+    strengths: string[];
+    weaknesses: string[];
+    evaluatedAt: Date;
+    evaluatedBy: "ai" | "manual";
   };
   manualReviewRequestedAt?: Date;
   // Show correct answer after submission (practice mode)
@@ -87,6 +101,10 @@ const AnswerSchema: Schema<IAnswer> = new Schema(
     questionType: {
       type: String,
       required: true,
+    },
+    questionText: {
+      type: String,
+      required: false,
     },
     selectedOption: {
       type: String, // "A", "B", "C", "D"
@@ -137,6 +155,35 @@ const AnswerSchema: Schema<IAnswer> = new Schema(
       evaluatedAt: { type: Date },
       evaluatedBy: { type: String, enum: ["ai", "manual"] },
       examinerNotes: { type: String },
+    },
+    speakingEvaluation: {
+      transcript: { type: String },
+      fluencyCoherence: {
+        bandScore: { type: Number },
+        feedback: { type: String },
+        tips: [{ type: String }],
+      },
+      lexicalResource: {
+        bandScore: { type: Number },
+        feedback: { type: String },
+        tips: [{ type: String }],
+      },
+      grammaticalRange: {
+        bandScore: { type: Number },
+        feedback: { type: String },
+        tips: [{ type: String }],
+      },
+      pronunciation: {
+        bandScore: { type: Number },
+        feedback: { type: String },
+        tips: [{ type: String }],
+      },
+      overallBand: { type: Number },
+      generalFeedback: { type: String },
+      strengths: [{ type: String }],
+      weaknesses: [{ type: String }],
+      evaluatedAt: { type: Date },
+      evaluatedBy: { type: String, enum: ["ai", "manual"], default: "ai" },
     },
     manualReviewRequestedAt: {
       type: Date,

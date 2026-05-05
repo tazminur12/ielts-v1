@@ -33,7 +33,7 @@ export function useExamSession(
   // Initialize or load session
   useEffect(() => {
     if (!testId || !attemptId) {
-      setSession(null);
+      queueMicrotask(() => setSession(null));
       localStorage.removeItem(LOCAL_STORAGE_KEY);
       return;
     }
@@ -43,9 +43,9 @@ export function useExamSession(
       try {
         const parsed = JSON.parse(stored) as ExamSession;
         if (parsed.testId === testId && parsed.attemptId === attemptId) {
-          setResumeModalOpen(true);
-          setPendingLocalAnswers(parsed.answers);
-          setPendingTime(parsed.timeRemaining);
+          queueMicrotask(() => setResumeModalOpen(true));
+          queueMicrotask(() => setPendingLocalAnswers(parsed.answers));
+          queueMicrotask(() => setPendingTime(parsed.timeRemaining));
           return;
         }
       } catch {
@@ -61,9 +61,27 @@ export function useExamSession(
       lastSaved: new Date(),
       timeRemaining: initialTimeRemaining,
     };
-    setSession(newSession);
+    queueMicrotask(() => setSession(newSession));
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newSession));
   }, [testId, attemptId, initialAnswers, initialTimeRemaining]);
+
+  // Sync pending answers when coming back online
+  const syncPendingAnswers = useCallback(async () => {
+    if (!session || !isOnline) return;
+    try {
+      await fetch("/api/exam/autosave", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attemptId: session.attemptId,
+          answers: session.answers,
+          timeRemaining: session.timeRemaining,
+        }),
+      });
+    } catch {
+      // Failed to sync, will try again later
+    }
+  }, [session, isOnline]);
 
   // Listen for online/offline
   useEffect(() => {
@@ -83,25 +101,7 @@ export function useExamSession(
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, []);
-
-  // Sync pending answers when coming back online
-  const syncPendingAnswers = useCallback(async () => {
-    if (!session || !isOnline) return;
-    try {
-      await fetch("/api/exam/autosave", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          attemptId: session.attemptId,
-          answers: session.answers,
-          timeRemaining: session.timeRemaining,
-        }),
-      });
-    } catch {
-      // Failed to sync, will try again later
-    }
-  }, [session, isOnline]);
+  }, [syncPendingAnswers]);
 
   // Save to localStorage
   const saveToLocal = useCallback(() => {
