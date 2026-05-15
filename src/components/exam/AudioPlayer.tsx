@@ -54,16 +54,37 @@ export const AudioPlayer = ({ src, lockKey, singlePlay }: Props) => {
     } catch {}
   }, [readLock, storageKey]);
 
+  // Sync lock/position when switching listening parts (same player instance, new lockKey/src)
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
+    audio.pause();
+    setIsPlaying(false);
+    setDuration(0);
+    setCurrentTime(0);
+
     if (singlePlay && storageKey) {
       const s = readLock();
-      if (typeof s.lastTime === "number" && s.lastTime > 0 && Number.isFinite(s.lastTime)) {
-        audio.currentTime = Math.max(0, s.lastTime);
-      }
+      const ended = typeof s.endedAt === "number";
+      setLocked(ended);
+      const resumeAt =
+        typeof s.lastTime === "number" && s.lastTime > 0 && Number.isFinite(s.lastTime)
+          ? s.lastTime
+          : 0;
+      lastTimeRef.current = resumeAt;
+      audio.currentTime = Math.max(0, resumeAt);
+      setCurrentTime(audio.currentTime);
+    } else {
+      setLocked(false);
+      lastTimeRef.current = 0;
+      audio.currentTime = 0;
     }
+  }, [readLock, singlePlay, src, storageKey]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
 
     const setAudioData = () => {
       setDuration(audio.duration);

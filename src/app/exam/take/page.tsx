@@ -9,8 +9,8 @@ import {
 } from "lucide-react";
 import { effectiveTestDurationMinutes } from "@/lib/testDuration";
 import QuestionNavPanel from "@/components/exam/QuestionNavPanel";
-import { AudioPlayer } from "@/components/exam/AudioPlayer";
 import SpeakingSequentialView from "@/components/exam/SpeakingSequentialView";
+import { ReadingSection, WritingSection, ListeningSection } from "@/components/exam/sections";
 import type {
   LiveMetricsSnapshot,
   FollowUpQuestion,
@@ -22,40 +22,7 @@ import {
   deleteBackup,
   retryPendingBackups,
 } from "@/lib/speakingBackup";
-
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  maxAttempts: number = 3,
-  baseDelayMs: number = 2000,
-  onRetry?: (attempt: number) => void
-): Promise<T> {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      const retryableFlag = (err as { retryable?: boolean })?.retryable;
-      const status = (err as { status?: number })?.status;
-      const isNonRetryableStatus = typeof status === "number" && status >= 400 && status < 500 && status !== 429;
-      if (retryableFlag === false || isNonRetryableStatus) throw err;
-      if (attempt === maxAttempts) throw err;
-      if (onRetry) onRetry(attempt + 1);
-      const delay = baseDelayMs * Math.pow(2, attempt - 1);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-  throw new Error("All retry attempts failed");
-}
-
-// Helper to convert Uint8Array to base64 without stack overflow
-function uint8ArrayToBase64(uint8Array: Uint8Array): string {
-  const chunkSize = 8192;
-  let result = '';
-  for (let i = 0; i < uint8Array.length; i += chunkSize) {
-    const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
-    result += String.fromCharCode(...Array.from(chunk));
-  }
-  return btoa(result);
-}
+import { retryWithBackoff, uint8ArrayToBase64 } from "@/lib/examHelpers";
 
 // ─── Types (aligned with backend enums) ──────────────────────────────────────
 
@@ -1676,6 +1643,7 @@ function TakeExamContent() {
       <main className="flex-1 overflow-hidden">
         {activeSection && (
           <SectionView
+            key={activeSection._id}
             section={activeSection}
             test={test}
             attemptId={attemptId}
@@ -2005,112 +1973,26 @@ function SectionView({
     const hasParagraphLabels = readingParagraphs.length > 1;
 
     return (
-      <div className="flex h-full min-h-0 overflow-hidden">
-        <div className="w-1/2 min-w-0 shrink-0 overflow-y-auto border-r border-[#d4cfc4] bg-[#faf9f6] shadow-[inset_-8px_0_24px_-12px_rgba(12,26,46,0.06)]">
-          <div className="p-6 sm:p-8 max-w-2xl mx-auto">
-            <div className="flex items-center gap-2 mb-5 pb-3 border-b border-[#d4cfc4]">
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c9a227]">
-                Reading passage
-              </span>
-            </div>
-            <h2 className="text-lg font-bold text-[#0c1a2e] mb-4 leading-snug">
-              {section.title}
-            </h2>
-            {readingRange && (
-              <div className="mb-5 border border-[#d4cfc4] bg-white px-4 py-3">
-                <p className="text-xs tracking-[0.16em] font-bold text-[#0c1a2e] uppercase mb-1">
-                  Reading Passage {readingPart}
-                </p>
-                <p className="text-sm text-slate-700 leading-relaxed font-serif">
-                  You should spend about 20 minutes on Questions {readingRange.start}-{readingRange.end} which are based on Reading Passage {readingPart} below.
-                </p>
-              </div>
-            )}
-            {section.passageImage && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={section.passageImage}
-                alt="Passage illustration"
-                className="w-full mb-5 border border-[#d4cfc4]"
-              />
-            )}
-            {hasParagraphLabels ? (
-              <div className="space-y-4 text-slate-800 leading-[1.85] text-[15px] font-serif selection:bg-amber-100">
-                {readingParagraphs.map((paragraph, idx) => (
-                  <div key={`${idx}-${paragraph.slice(0, 20)}`} className="grid grid-cols-[2rem_1fr] gap-3">
-                    <div className="pt-0.5">
-                      <span className="inline-flex h-7 w-7 items-center justify-center bg-[#0c1a2e] text-[#f4ecd7] text-xs font-bold">
-                        {readingParagraphLabel(idx)}
-                      </span>
-                    </div>
-                    <p className="whitespace-pre-wrap">{paragraph}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-slate-800 leading-[1.85] text-[15px] font-serif whitespace-pre-wrap selection:bg-amber-100">
-                {section.passageText}
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex-1 min-w-0 overflow-y-auto bg-[#e8e4dc]">
-          <div className="p-4 sm:p-6 max-w-3xl">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-3">
-              Questions
-            </p>
-            {Questions}
-          </div>
-        </div>
-      </div>
+      <ReadingSection section={section}>
+        {Questions}
+      </ReadingSection>
     );
   }
-
   /* ── Listening: audio header + questions ─────────────────────────────── */
   if (isListening) {
     return (
-      <div className="h-full overflow-y-auto bg-[#e8e4dc]">
-        <div className="max-w-3xl mx-auto p-5 space-y-5">
-          {/* Audio player card */}
-          {section.audioUrl && (
-            <div className="bg-[#0c1a2e] border border-[#c9a227]/35 p-4 sm:p-5 shadow-[0_8px_32px_rgba(0,0,0,0.25)]">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-9 h-9 bg-[#c9a227] flex items-center justify-center border border-[#e4c96a]/40">
-                  <Headphones size={16} className="text-[#0c1a2e]" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#c9a227] mb-0.5">
-                    Listening
-                  </p>
-                  <p className="text-white font-semibold text-sm">{section.title}</p>
-                  <p className="text-slate-400 text-xs mt-0.5">Listen once only. Answer as you listen.</p>
-                </div>
-              </div>
-              <AudioPlayer
-                src={section.audioUrl}
-                lockKey={attemptId ? `attempt:${attemptId}:section:${section._id}` : undefined}
-                singlePlay
-              />
-            </div>
-          )}
-          {Questions}
-        </div>
-      </div>
+      <ListeningSection section={section}>
+        {Questions}
+      </ListeningSection>
     );
   }
 
   /* ── Writing ────────────────────────────────────────────────────────── */
   if (isWriting) {
     return (
-      <div className="h-full overflow-y-auto bg-[#e8e4dc]">
-        <div className="max-w-4xl mx-auto p-5 space-y-5">
-          <div className="border-b border-[#d4cfc4] pb-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#c9a227] mb-1">Writing</p>
-            <h2 className="text-lg font-bold text-[#0c1a2e] leading-snug">{section.title}</h2>
-          </div>
-          {Questions}
-        </div>
-      </div>
+      <WritingSection section={section}>
+        {Questions}
+      </WritingSection>
     );
   }
 
